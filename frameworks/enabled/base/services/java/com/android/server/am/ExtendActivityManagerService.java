@@ -20,6 +20,7 @@ import static com.android.internal.util.ArrayUtils.appendInt;
 import java.util.ArrayList;
 import java.util.List;
 
+import android.app.AppGlobals;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.UserInfo;
@@ -30,7 +31,9 @@ import android.os.Process;
 import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.os.UserHandle;
+import android.util.Log;
 import android.util.Slog;
+import com.android.server.pm.UserManagerService;
 
 import com.intel.arkham.ContainerCommons;
 import com.intel.arkham.ContainerConstants;
@@ -40,6 +43,8 @@ import com.intel.arkham.IContainerManager;
 
 /** {@hide} */
 public final class ExtendActivityManagerService extends ActivityManagerService {
+    private static final String DEFAULT_CONTAINER_PACKAGE = "com.android.defcontainer";
+
     private static final List<String> sProviders = new ArrayList<String>();
     static {
         sProviders.add("user_dictionary");
@@ -121,67 +126,81 @@ public final class ExtendActivityManagerService extends ActivityManagerService {
     }
 
     protected int[] appendContainerGroupId(int uid, int[] gids) {
-            // ARKHAM - 125, Include container group id in process group list.int[] rGids = gids;
         int[] rGids = gids;
 
-        IBinder b = ServiceManager.getService(ContainerConstants.CONTAINER_MANAGER_SERVICE);
-        IContainerManager containerService = IContainerManager.Stub.asInterface(b);
-        if (containerService == null) {
-            Slog.e(TAG, "appendContainerGroupId: Failed connecting to Container Manager Service");
-            return rGids;
+        // ARKHAM - 1331, 656 - Give Default Container Service access to files
+        // inside the container. This is done to allow Google Play to install
+        // apps inside the container.
+        try {
+            int packageUid = AppGlobals.getPackageManager().getPackageUid(
+                    DEFAULT_CONTAINER_PACKAGE, UserHandle.USER_OWNER);
+            if (uid == packageUid) {
+                for (int gid = ContainerConstants.FIRST_CONTAINER_GID;
+                        gid <= ContainerConstants.LAST_CONTAINER_GID; gid++) {
+                    rGids = appendInt(rGids, gid);
+                }
+                return rGids;
+            }
+        } catch (RemoteException e) {
+            Slog.e(TAG, "Error while adding GIDs to " + DEFAULT_CONTAINER_PACKAGE, e);
         }
+        // ARKHAM - Changes end
 
+        // ARKHAM - 125, Include container group id in process group list.int[]
+        // for processes started from container
+        IContainerManager containerService = getContainerManager();
+        UserManagerService um = getUserManagerLocked();
+        if (containerService == null || um == null) return rGids;
         int userid = UserHandle.getUserId(uid);
-        UserInfo userInfo = getUserManagerLocked().getUserInfo(userid);
-        if (userInfo!=null && userInfo.isContainer()){
-            try{
+        UserInfo userInfo = um.getUserInfo(userid);
+        if (userInfo != null && userInfo.isContainer()) {
+            try {
                 ContainerInfo container = containerService.getContainerFromCid(userid);
-                if (container!=null)
-                    rGids = appendInt(gids, container.getContainerGid());
-            } catch(RemoteException e) {
+                if (container != null) rGids = appendInt(gids, container.getContainerGid());
+            } catch (RemoteException e) {
                 Slog.e(TAG, "appendContainerGroupId: Failed talking with CMS: ", e);
             }
         }
-            // ARKHAM - Changes end.
+        // ARKHAM - Changes end.
         return rGids;
     }
 
     protected int processSpecialContentProviderImpl(int uid, String name) {
-            // ARKHAM 356,358 - redirection request to container owner
+        // ARKHAM 356,358 - redirection request to container owner
         int userId = uid;
-            // ARKHAM 356,358 - redirection request to container owner
-            long callingId = Binder.clearCallingIdentity();
-            UserInfo userInfo = getUserManagerLocked().getUserInfo(userId);
-            Binder.restoreCallingIdentity(callingId);
-            if (userInfo.isContainer()) {
-                boolean switchProviderToOwner = false;
-                if (sProviders.contains(name)) {
+        long callingId = Binder.clearCallingIdentity();
+        UserManagerService um = getUserManagerLocked();
+        if (um == null) return userId;
+
+        UserInfo userInfo = um.getUserInfo(userId);
+        Binder.restoreCallingIdentity(callingId);
+        if (userInfo != null && userInfo.isContainer()) {
+            boolean switchProviderToOwner = false;
+            if (sProviders.contains(name)) {
+                switchProviderToOwner = true;
+            } else if (name.equals(PACKAGE_CONTACTS)) {
+                /* ARKHAM 824: Remove contacts merge settings from the ContainerLauncher
+                 * We check for the contacts merge policy directly from the CPM. */
+                int containerId = UserHandle.getUserId(Binder.getCallingUid());
+                callingId = Binder.clearCallingIdentity();
+                ContainerCommons.MergeContacts mc = getMergeContactsPolicy(containerId);
+                Binder.restoreCallingIdentity(callingId);
+                if (mc == ContainerCommons.MergeContacts.NORMAL) {
                     switchProviderToOwner = true;
-                } else if (name.equals(PACKAGE_CONTACTS)) {
-                    /* ARKHAM 824: Remove contacts merge settings from the ContainerLauncher
-                     * We check for the contacts merge policy directly from the CPM. */
-                    int containerId = UserHandle.getUserId(Binder.getCallingUid());
-                    callingId = Binder.clearCallingIdentity();
-                    ContainerCommons.MergeContacts mc = getMergeContactsPolicy(containerId);
-                    Binder.restoreCallingIdentity(callingId);
-                    if (mc == ContainerCommons.MergeContacts.NORMAL) {
-                        switchProviderToOwner = true;
-                    }
-                }
-                if (switchProviderToOwner) {
-                    userId = userInfo.containerOwner;
                 }
             }
-            // ARKHAM Changes End.
-
+            if (switchProviderToOwner) {
+                userId = userInfo.containerOwner;
+            }
+        }
+        // ARKHAM Changes End.
         return userId;
     }
 
     private ContainerCommons.MergeContacts getMergeContactsPolicy(int containerId) {
-        IBinder b = ServiceManager.getService(ContainerConstants.CONTAINER_MANAGER_SERVICE);
-        IContainerManager containerService = IContainerManager.Stub.asInterface(b);
-
+        IContainerManager containerService = getContainerManager();
         ContainerCommons.MergeContacts mergeContacts = ContainerCommons.MergeContacts.DISABLED;
+        if (containerService == null) return mergeContacts;
         try {
             mergeContacts = ContainerCommons.MergeContacts.valueOf(containerService
                     .getMergeContactsPolicy(containerId));
@@ -195,11 +214,12 @@ public final class ExtendActivityManagerService extends ActivityManagerService {
         ContainerInfo container = null;
         try {
             IBinder b = ServiceManager.getService(ContainerConstants.CONTAINER_MANAGER_SERVICE);
-            IContainerManager containerService = IContainerManager.Stub.asInterface(b);
-
-            // Only add calling user's recent tasks
-            // Also add existing containers' recent tasks, if userId is the container owner
-            container = containerService.getContainerFromCid(userId);
+            IContainerManager containerService = getContainerManager();
+            if (containerService != null) {
+                // Only add calling user's recent tasks
+                // Also add existing containers' recent tasks, if userId is the container owner
+                container = containerService.getContainerFromCid(userId);
+            }
         } catch (RemoteException e) {
             Slog.e(TAG, "getContainer: failed talking with ContainerManagerService: ", e);
         } finally {
@@ -217,6 +237,10 @@ public final class ExtendActivityManagerService extends ActivityManagerService {
                 return super.isUsersTask(tr, userId);
             IUserManager um = IUserManager.Stub.asInterface(
                 ServiceManager.getService(Context.USER_SERVICE));
+            if (um == null) {
+                Slog.e(TAG, "Failed to retrieve a UserManager instance.");
+                return false;
+            }
             int containerOwnerId = um.getUserInfo(tr.userId).containerOwner;
             if (userId == containerOwnerId)
                 return true;
@@ -237,7 +261,9 @@ public final class ExtendActivityManagerService extends ActivityManagerService {
      */
     protected final boolean broadcastCheckUserStopped(Intent intent, int callingUid, int userId) {
         if (userId != UserHandle.USER_ALL && mStartedUsers.get(userId) == null) {
-            UserInfo userInfo = getUserManagerLocked().getUserInfo(userId);
+            UserManagerService um = getUserManagerLocked();
+            if (um == null) return false;
+            UserInfo userInfo = um.getUserInfo(userId);
             boolean isContainerUser = false;
             if (userInfo != null && userInfo.isContainer())
                 isContainerUser = true;
@@ -260,7 +286,9 @@ public final class ExtendActivityManagerService extends ActivityManagerService {
             return super.getUsersForSpecificBroadcast(userId, ordered);
 
         int[] users;
-        UserInfo userInfo = getUserManagerLocked().getUserInfo(userId);
+        UserManagerService um = getUserManagerLocked();
+        if (um == null) return new int[] {userId};;
+        UserInfo userInfo = um.getUserInfo(userId);
 
         if (userInfo != null && userInfo.isContainer()) {
             users = new int[] {userId, userInfo.containerOwner};
@@ -269,13 +297,28 @@ public final class ExtendActivityManagerService extends ActivityManagerService {
             // If userId is not a container one, scan all started users
             // list and add all container users having userId as owner
             for (int t_user : mStartedUserArray) {
-                UserInfo t_userInfo = getUserManagerLocked().getUserInfo(t_user);
-                if (t_user != userId && t_userInfo.isContainer()
-                    && t_userInfo.containerOwner == userId)
+                UserInfo t_userInfo = um.getUserInfo(t_user);
+                if (t_user != userId && t_userInfo != null &&
+                        t_userInfo.isContainer() && t_userInfo.containerOwner == userId)
                     users = appendInt(users, t_user);
             }
         }
 
         return users;
+    }
+
+    private IContainerManager getContainerManager() {
+        IContainerManager containerService = IContainerManager.Stub.asInterface(
+                (IBinder) ServiceManager.getService(ContainerConstants.CONTAINER_MANAGER_SERVICE));
+        if (containerService == null)
+            Slog.e(TAG, "Failed to retrieve a ContainerManagerService instance.");
+        return containerService;
+    }
+
+    @Override
+    UserManagerService getUserManagerLocked() {
+        UserManagerService ums = super.getUserManagerLocked();
+        if (ums == null) Slog.e(TAG, "Failed to retrieve a UserManager instance.");
+        return ums;
     }
 }

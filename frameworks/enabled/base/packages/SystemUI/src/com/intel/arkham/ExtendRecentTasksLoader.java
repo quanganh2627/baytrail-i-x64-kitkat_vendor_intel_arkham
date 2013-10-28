@@ -18,17 +18,18 @@ package com.intel.arkham;
 
 import android.app.ActivityManager;
 import android.content.Context;
-import android.content.Intent;
-import android.content.pm.ApplicationInfo;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.PackageManager.NameNotFoundException;
-import android.content.pm.ResolveInfo;
 import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.drawable.Drawable;
-import android.os.UserHandle;
+import android.os.Binder;
+import android.os.IBinder;
+import android.os.RemoteException;
+import android.os.ServiceManager;
 import android.util.Log;
+import android.util.Slog;
 
 import com.android.systemui.recent.RecentTasksLoader;
 import com.android.systemui.recent.TaskDescription;
@@ -40,20 +41,22 @@ public class ExtendRecentTasksLoader extends RecentTasksLoader {
         super(context);
     }
 
-    /* ARKHAM-331 - Fix recent apps list for container activities
-     * For container activities, use the container id as userId instead of the
-     * current user id, since the container activities are running as their user
-     */
-    @Override
-    protected ResolveInfo resolveActivity(Intent intent) {
-        ContainerInfo cInfo = (ContainerInfo) intent.getExtra("containerInfo");
-        int userId = UserHandle.myUserId();
-        if (cInfo != null) {
-            userId = cInfo.getContainerId();
+    protected ContainerInfo getContainer(int userId) {
+        long token = Binder.clearCallingIdentity();
+        ContainerInfo container = null;
+        try {
+            IBinder b = ServiceManager.getService(ContainerConstants.CONTAINER_MANAGER_SERVICE);
+            IContainerManager containerService = IContainerManager.Stub.asInterface(b);
+            // Only add calling user's recent tasks
+            // Also add existing containers' recent tasks, if userId is the container owner
+            container = containerService.getContainerFromCid(userId);
+        } catch (RemoteException e) {
+            Slog.e(TAG, "getContainer: failed talking with ContainerManagerService: ", e);
+        } finally {
+            Binder.restoreCallingIdentity(token);
         }
-        return mContext.getPackageManager().resolveActivityAsUser(intent, 0, userId);
+        return container;
     }
-
 
     @Override
     protected void loadThumbnailAndIcon(TaskDescription _td) {

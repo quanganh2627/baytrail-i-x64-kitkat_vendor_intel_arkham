@@ -67,7 +67,8 @@ class ExtendMountService extends MountService
         IContainerManager containerService = IContainerManager.Stub.asInterface((IBinder)
                 ServiceManager.getService(ContainerConstants.CONTAINER_MANAGER_SERVICE));
         try {
-            ret = containerService.unmountInternalStorageForAllContainers();
+            ret = (containerService != null
+                    ? containerService.unmountInternalStorageForAllContainers() : -1);
         } catch (RemoteException e) {
             ret = -1;
         }

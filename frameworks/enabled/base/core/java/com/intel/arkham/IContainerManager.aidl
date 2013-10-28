@@ -8,9 +8,8 @@ import java.util.List;
 
 import android.accounts.Account;
 import android.content.Intent;
-import android.content.pm.ApplicationInfo;
+import android.content.pm.ActivityInfo;
 import android.os.Bundle;
-import android.os.IBinder;
 
 import com.intel.arkham.ContainerInfo;
 
@@ -28,9 +27,11 @@ interface IContainerManager {
 
     boolean enableContainer();
 
-    boolean disableContainer();
+    boolean wipeOrDisableContainer(in int cid);
 
-    void removeContainer(in int cid);
+    boolean disableContainer(in int cid);
+
+    boolean removeContainer(in int cid);
 
     int unlockContainer(in byte[] passwordHash, in int cid);
 
@@ -114,4 +115,16 @@ interface IContainerManager {
     boolean setPasswordMaxAttemptsAction(int cid, String action);
 
     void logContainerUnmountedAccess(int userId, in String path);
+
+    int isContainerAccount(String accountName);
+
+    Bundle getSystemWhitelist();
+
+    List<ActivityInfo> getAvailableAppsForDeletion(int cid);
+
+    boolean isContainerLauncherInstalled(int cid);
+
+    boolean installContainerLauncher(int cid);
+
+    void rebootDevice(int cid, String reason);
 }

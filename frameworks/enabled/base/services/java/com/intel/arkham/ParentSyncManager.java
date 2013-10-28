@@ -16,6 +16,7 @@
 
 package com.intel.arkham;
 
+import android.accounts.Account;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -26,6 +27,8 @@ import android.os.ServiceManager;
 import android.os.UserHandle;
 import android.util.Log;
 
+import com.android.server.content.SyncQueue;
+import com.android.server.content.SyncStorageEngine;
 import com.intel.arkham.IContainerManager;
 import com.intel.arkham.ContainerConstants;
 
@@ -38,6 +41,7 @@ public abstract class ParentSyncManager {
         // ARKHAM-706, fix to sync container accounts after reboot
         IntentFilter intentFilter = new IntentFilter();
         intentFilter.addAction(ContainerConstants.ACTION_CONTAINER_OPENED);
+        intentFilter.addAction(ContainerConstants.ACTION_CONTAINER_DISABLED);
         context.registerReceiverAsUser(
                 mUserIntentReceiver, UserHandle.ALL, intentFilter, null, null);
     }
@@ -52,11 +56,22 @@ public abstract class ParentSyncManager {
             // ARKHAM-706, fix to sync container accounts after reboot
             if (ContainerConstants.ACTION_CONTAINER_OPENED.equals(action)) {
                 onUserStarting(userId);
+            } else if (ContainerConstants.ACTION_CONTAINER_DISABLED.equals(action)) {
+                Log.i(TAG, "!@calling doDatabaseCleanup");
+                getSyncStorageEngine().doDatabaseCleanup(new Account[0], userId);
+                SyncQueue syncQueue = getSyncQueue();
+                synchronized (syncQueue) {
+                    Log.i(TAG, "!@calling syncQueue.removeUser");
+                    syncQueue.removeUser(userId);
+                }
             }
+
         }
     };
 
     protected abstract void onUserStarting(int userId);
+    protected abstract SyncQueue getSyncQueue();
+    public abstract SyncStorageEngine getSyncStorageEngine();
 
     /**
      * ARKHAM-477: wrapper for ContainerManagerService call

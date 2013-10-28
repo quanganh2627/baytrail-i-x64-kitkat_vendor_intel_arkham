@@ -125,6 +125,10 @@ public class ExtendNotificationManagerService extends NotificationManagerService
     protected boolean isContainerUser(int userId) {
         IUserManager userManager = IUserManager.Stub.asInterface(ServiceManager
                 .getService(Context.USER_SERVICE));
+        if (userManager == null) {
+            Slog.e(TAG, "Failed to retrieve a UserManager instance.");
+            return false;
+        }
         long ident = Binder.clearCallingIdentity();
 
         try {
@@ -148,6 +152,10 @@ public class ExtendNotificationManagerService extends NotificationManagerService
     protected int getContainerOwner(int userId) {
         IUserManager userManager = IUserManager.Stub.asInterface(ServiceManager
                 .getService(Context.USER_SERVICE));
+        if (userManager == null) {
+            Slog.e(TAG, "Failed to retrieve a UserManager instance.");
+            return UserHandle.USER_OWNER;
+        }
         long ident = Binder.clearCallingIdentity();
 
         try {

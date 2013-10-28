@@ -48,21 +48,19 @@ public interface ContainerConstants {
     public static final String SYNC_ACCOUNT_TYPE = "com.intel.arkham.accounts";
 
     /**
-     * For ARKHAM-669
-     * Use with {@link #getSystemService} to retrieve a
+     * Use with {@link android.content.Context#getSystemService} to retrieve a
      * {@link com.intel.arkham.ContainerManager} for doing container management.
      *
-     * @see #getSystemService
+     * @see android.content.Context#getSystemService
      */
     public static final String CONTAINER_MANAGER_SERVICE = "container_manager";
 
     /**
-     * For ARKHAM-242
-     * Use with {@link #getSystemService} to retrieve a
+     * Use with {@link android.content.Context#getSystemService} to retrieve a
      * {@link com.intel.arkham.ContainerPolicyManager} for working with
      * container policy management.
      *
-     * @see #getSystemService
+     * @see android.content.Context#getSystemService
      */
     public static final String CONTAINER_POLICY_SERVICE = "container_policy";
 
@@ -78,6 +76,8 @@ public interface ContainerConstants {
      */
     public static final int LAST_CONTAINER_GID = 3704;
     // ARKHAM-72 END
+
+    public static final int CONTAINER_CONTACTID_OFFSET = 1000000;
 
     // Policies to be passed from MDM outside the container to MDM inside
 
@@ -113,13 +113,19 @@ public interface ContainerConstants {
     public static final String POLICY_APP_WHITE_LIST = "applicationWhiteList";
     public static final String POLICY_SYSTEM_BLACK_LIST = "systemBlackList";
     public static final String POLICY_CONTACT_FIELD_WHITE_LIST = "contactFieldWhiteList";
+    public static final String POLICY_ACTION_DISABLE = "DISABLE";
+    public static final String POLICY_ACTION_WIPE = "WIPE";
 
     public static final int NOTIFICATION_ID_CONTAINER_LOCKED = 1001;
 
-    // Permissions
+    // Permissions. The PERMISSION_CONTACTS_PROVIDER is the least restrictive
+    // permission (meaning methods enforcing this permission can be accessed
+    // from any app: contacts provider, outisde MDM, container launcher or
+    // inside MDM), while PERMISSION_SYSTEM is the most restrictive one (meaning
+    // only root or system users can call methods enforcing this permission)
     public static final int PERMISSION_CONTACTS_PROVIDER = 0x00000001;
-    public static final int PERMISSION_LAUNCHER          = 0x00000010;
-    public static final int PERMISSION_ADMIN             = 0x00000100;
+    public static final int PERMISSION_ADMIN             = 0x00000010;
+    public static final int PERMISSION_LAUNCHER          = 0x00000100;
     public static final int PERMISSION_CONTAINER_ADMIN   = 0x00001000;
     public static final int PERMISSION_SYSTEM            = 0x00010000;
     public static final int PRIMARY_USER = 0;
@@ -138,9 +144,14 @@ public interface ContainerConstants {
     public static final String ACTION_INSTALL_APP = "com.intel.arkham.INSTALL_APP";
     public static final String ACTION_REMOVE_APP = "com.intel.arkham.REMOVE_APP";
     public static final String ACTION_CONTAINER_REMOVED = "com.intel.arkham.CONTAINER_REMOVED";
+    public static final String ACTION_CONTAINER_DISABLED = "com.intel.arkham.CONTAINER_DISABLED";
+    public static final String ACTION_CLEAR_CONTACTS = "com.intel.arkham.CLEAR_CONTACTS";
+    public static final String ACTION_CONTAINER_UNMOUNT_FAILED =
+            "com.intel.arkham.CONTAINER_UNMOUNT_FAILED";
     public static final String EXTRA_CONTAINER_MDM_BROADCAST = "containerMdmBroadcast";
     public static final String EXTRA_CONTAINER_ID = "containerId";
     public static final String EXTRA_POLICY_BUNDLE = "policyBundle";
+    public static final String EXTRA_INTENT_ACCOUNTS = "Accounts";
     public static final String EXTRA_POLICY_RESULT_BUNDLE = "policyResultBundle";
     public static final String EXTRA_APK_FILE_PATH = "apkFilePath";
     public static final String EXTRA_PACKAGE_NAME = "packageName";
@@ -170,7 +181,8 @@ public interface ContainerConstants {
     /**
      * This broadcast is sent to the container launcher to update its background
      */
-    public static final String ACTION_UPDATE_LAUNCHER_BACKGROUND = "com.intel.arkham.UPDATE_LAUNCHER_BACKGROUND";
+    public static final String ACTION_UPDATE_LAUNCHER_BACKGROUND =
+            "com.intel.arkham.UPDATE_LAUNCHER_BACKGROUND";
 
     /**
      * Default MDM inside the container. This should be disabled for container owners.
@@ -190,8 +202,15 @@ public interface ContainerConstants {
 
     public static final String EXTRA_CONTAINER_INFO = "containerInfo";
 
-    public static final String ACTION_UNLOCK_CONTAINER_KEYSTORE = "com.intel.arkham.ACTION_UNLOCK_CONTAINER_KEYSTORE";
+    public static final String ACTION_UNLOCK_CONTAINER_KEYSTORE =
+            "com.intel.arkham.ACTION_UNLOCK_CONTAINER_KEYSTORE";
     public static final String EXTRA_KEYSTORE_PASSWORD = "keystore_password";
 
     public static final String ContainerPackageRegexp = "(_container_)([0-9]+)$";
+
+    /**
+     * Container timeout policy constants.
+     */
+    public static final int TIMEOUT_TYPE_CONTAINER_ACTIVITY = 0;
+    public static final int TIMEOUT_TYPE_DEVICE_ACTIVITY = 1;
 }

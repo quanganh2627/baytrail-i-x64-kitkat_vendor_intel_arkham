@@ -24,6 +24,7 @@ import android.os.Handler;
 
 import com.intel.arkham.ContainerConstants;
 
+/** @hide */
 public class ExtendAccountManager extends AccountManager {
 
     public ExtendAccountManager(Context context, IAccountManager service) {

@@ -59,6 +59,12 @@ public class ExtendAccountManagerService extends AccountManagerService {
         }, userStopFilter);
     }
 
+    public void onContainerDisabled(int cid) {
+        Intent intent = new Intent(ContainerConstants.ACTION_CONTAINER_DISABLED);
+        intent.putExtra(Intent.EXTRA_USER_HANDLE, cid);
+        onUserRemoved(intent);
+    }
+
     /**
      * Origin - ARKHAM
      * ARKHAM-635 - get a reference to the ContainerManager
@@ -68,6 +74,8 @@ public class ExtendAccountManagerService extends AccountManagerService {
             mContainerManager = IContainerManager.Stub.asInterface(
                     ServiceManager.getService(ContainerConstants.CONTAINER_MANAGER_SERVICE));
         }
+        if (mContainerManager == null)
+            Log.e(TAG, "Failed to retrieve a ContainerManagerService instance.");
         return mContainerManager;
     }
 
@@ -80,7 +88,7 @@ public class ExtendAccountManagerService extends AccountManagerService {
 
         // close accounts.db only for container users
         UserInfo userInfo = getUserManager().getUserInfo(userId);
-        if (!userInfo.isContainer())
+        if (userInfo != null && !userInfo.isContainer())
             return;
 
         closeAccountDatabase(userId);
@@ -94,6 +102,7 @@ public class ExtendAccountManagerService extends AccountManagerService {
         // ARKHAM-635 - START
         // broadcast to the container owner if the user is a container one
         IContainerManager cm = getContainerManager();
+        if (cm == null) return;
         try {
             if (cm.isContainerUser(userId)) {
                 mContext.sendBroadcastAsUser(ACCOUNTS_CHANGED_INTENT,
@@ -106,12 +115,13 @@ public class ExtendAccountManagerService extends AccountManagerService {
     }
 
     public Account[] getAccountsAsUser(String type, int userId) {
-        IContainerManager cm = getContainerManager();
-        boolean isContainerAccountType = ContainerConstants.ACCOUNT_TYPE_CONTAINER.equals(type);
         Account[] accounts;
+        IContainerManager cm = getContainerManager();
+        if (cm == null) return new Account[] {};
+        boolean isContainerAccountType = ContainerConstants.ACCOUNT_TYPE_CONTAINER.equals(type);
         accounts = super.getAccountsAsUser((isContainerAccountType) ? null : type, userId);
         try {
-            if(isContainerAccountType && !cm.isContainerUser(userId)) {
+            if (isContainerAccountType && !cm.isContainerUser(userId)) {
                 return cm.getContainerAccounts(accounts);
             }
         } catch (RemoteException e) {

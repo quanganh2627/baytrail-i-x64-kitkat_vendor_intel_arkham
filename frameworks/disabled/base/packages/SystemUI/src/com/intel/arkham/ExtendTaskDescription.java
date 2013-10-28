@@ -25,7 +25,7 @@ public final class ExtendTaskDescription extends TaskDescription {
 
     public ExtendTaskDescription(int _taskId, int _persistentTaskId,
             ResolveInfo _resolveInfo, Intent _intent,
-            String _packageName, CharSequence _description) {
+            String _packageName, CharSequence _description, ContainerInfo _containerInfo) {
         super(_taskId, _persistentTaskId, _resolveInfo, _intent, _packageName, _description);
     }
 

@@ -17,12 +17,14 @@
 package com.android.server.pm;
 
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.UserInfo;
+import android.os.IBinder;
 import android.os.RemoteException;
 import android.os.ServiceManager;
+import android.os.UserHandle;
 import android.util.Slog;
-import android.os.IPowerManager;
 import com.intel.arkham.ContainerConstants;
 import com.intel.arkham.ContainerInfo;
 import com.intel.arkham.IContainerManager;
@@ -52,16 +54,15 @@ public class ExtendUserManagerService extends UserManagerService {
         super(context, pm, installLock, packagesLock);
     }
 
-    // ARKHAM - 353, count excluding container users.
-    protected boolean isUserLimitReachedLocked() {
-        int nUsers = 0;
+     /* Arkham-353, Return the number of users that are NOT container users
+     */
+    protected int getRealUsersCount() {
+        int num = 0;
         for (int i = 0; i < mUsers.size(); i++) {
-            UserInfo ui = mUsers.valueAt(i);
-            if (mRemovingUserIds.get(ui.id) || ui.isContainer())
-                continue;
-            nUsers++;
+            if (!mUsers.valueAt(i).isContainer())
+                num++;
         }
-        return nUsers >= UserManager.getMaxSupportedUsers();
+        return num;
     }
 
     // ARKHAM-711 - disable Container Admin & ContainerLauncher for new
@@ -74,8 +75,7 @@ public class ExtendUserManagerService extends UserManagerService {
         // disable Container Admin app
         mPm.setApplicationEnabledSetting(ContainerConstants.PACKAGE_DEFAULT_CONTAINER_MDM,
                 PackageManager.COMPONENT_ENABLED_STATE_DISABLED, 0, userInfo.id, null);
-        IContainerManager cm = IContainerManager.Stub.asInterface(
-                ServiceManager.getService(ContainerConstants.CONTAINER_MANAGER_SERVICE));
+        IContainerManager cm = getContainerManager();
 
         // disable ContainerLauncher
         if (cm == null) {
@@ -96,50 +96,45 @@ public class ExtendUserManagerService extends UserManagerService {
     }
 
     // ARKHAM-433 call remove container function if user is container
-    protected void removeUserStateLocked(int userHandle) {
+    protected void removeUserStateLocked(final int userHandle) {
         UserInfo userInfo = getUserInfo(userHandle);
-        boolean isRebootNeeded = false;
-        if (userInfo != null && userInfo.isContainer()) {
-            isRebootNeeded = !removeContainerUser(userHandle);
+        boolean containerUnmounted = true;
+        IContainerManager cm = getContainerManager();
+        ContainerInfo containerInfo = null;
+        int containerOwner = -1;
+
+        if (userInfo != null && userInfo.isContainer() && cm != null) {
+            try {
+                containerInfo = cm.getContainerFromCid(userHandle);
+                containerOwner = cm.getContainerOwnerId(userHandle);
+                containerUnmounted = cm.removeContainerUser(userHandle);
+            } catch (RemoteException e) {
+                Slog.w(LOG_TAG, "Failed talking to Container Manager Service!");
+            }
         }
 
         super.removeUserStateLocked(userHandle);
 
         // ARKHAM-661: reboot if unmounting ecryptfs failed for container
-        if (isRebootNeeded) {
-           // This call waits for the reboot to complete and does not return.
-           IPowerManager pm = IPowerManager.Stub.
-                   asInterface(ServiceManager.getService(Context.POWER_SERVICE));
-           try {
-               pm.reboot(false, "Failed to unmount ecryptfs", true);
-           } catch (RemoteException e) {
-               Slog.w(LOG_TAG, "Failed talking to Power Manager Service!");
-           }
+        if (!containerUnmounted && cm != null && containerInfo != null) {
+            final String adminPackageName = containerInfo.getAdminPackageName();
+            final UserHandle containerOwnerHandle = new UserHandle(containerOwner);
+            new Thread() {
+                public void run() {
+                    Intent intent = new Intent(ContainerConstants.ACTION_CONTAINER_UNMOUNT_FAILED);
+                    intent.setPackage(adminPackageName);
+                    intent.putExtra(ContainerConstants.EXTRA_CONTAINER_ID, userHandle);
+                    mContext.sendBroadcastAsUser(intent, containerOwnerHandle);
+                }
+            }.start();
         }
-    }
-
-    private boolean removeContainerUser(int cid) {
-        IContainerManager containerService = IContainerManager.Stub.asInterface(
-            ServiceManager.getService(ContainerConstants.CONTAINER_MANAGER_SERVICE));
-        if (containerService == null) {
-            Slog.w(LOG_TAG, "Unable to connect to Container Manager Service!");
-            return false;
-        }
-        try {
-            containerService.removeContainerUser(cid);
-        } catch (RemoteException e) {
-            Slog.w(LOG_TAG, "Failed talking to Container Manager Service!");
-            return false;
-        }
-        return true;
     }
 
     /*
      * ARKHAM-733: only unlocked containers should be visible to the system
      */
     protected boolean isContainerUserAndLocked(UserInfo userInfo) {
-        IContainerManager cms = IContainerManager.Stub.asInterface(
-            ServiceManager.getService(ContainerConstants.CONTAINER_MANAGER_SERVICE));
+        IContainerManager cms = getContainerManager();
         Slog.d(LOG_TAG, "isContainerUserAndLocked userInfo " + userInfo);
         if (cms == null) {
             Slog.w(LOG_TAG, "Unable to connect to Container Manager Service!");
@@ -151,5 +146,13 @@ public class ExtendUserManagerService extends UserManagerService {
             Slog.w(LOG_TAG, "Failed talking to Container Manager Service!");
         }
         return false;
+    }
+
+    private IContainerManager getContainerManager() {
+        IContainerManager containerService = IContainerManager.Stub.asInterface(
+                (IBinder) ServiceManager.getService(ContainerConstants.CONTAINER_MANAGER_SERVICE));
+        if (containerService == null)
+            Slog.e(LOG_TAG, "Failed to retrieve a ContainerManagerService instance.");
+        return containerService;
     }
 }

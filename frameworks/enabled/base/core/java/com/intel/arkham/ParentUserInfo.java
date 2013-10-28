@@ -18,6 +18,7 @@ package com.intel.arkham;
 
 import android.os.Parcel;
 
+/** @hide */
 public abstract class ParentUserInfo {
 
     /**

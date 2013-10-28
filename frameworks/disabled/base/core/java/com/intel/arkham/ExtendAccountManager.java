@@ -21,6 +21,7 @@ import android.accounts.IAccountManager;
 import android.content.Context;
 import android.os.Handler;
 
+/** @hide */
 public class ExtendAccountManager extends AccountManager {
 
     public ExtendAccountManager(Context context, IAccountManager service) {

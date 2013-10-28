@@ -86,10 +86,14 @@ final class ExtendSettings extends Settings {
     // ARKHAM-433 END
 
     private UserInfo getUserInfo(int userId) {
+        UserInfo userInfo = null;
         IUserManager userManager =
                 IUserManager.Stub.asInterface(ServiceManager.getService(Context.USER_SERVICE));
+        if (userManager == null) {
+            Slog.w(TAG, "Unable to connect to User Manager Service!");
+            return userInfo;
+        }
         long ident = Binder.clearCallingIdentity();
-        UserInfo userInfo = null;
 
         try {
             userInfo = userManager.getUserInfo(userId);

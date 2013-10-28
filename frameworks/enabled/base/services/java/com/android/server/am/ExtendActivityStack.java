@@ -24,6 +24,7 @@ import android.app.AppGlobals;
 import android.app.IActivityManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.IPackageManager;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.content.pm.UserInfo;
@@ -35,6 +36,7 @@ import android.os.Looper;
 import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.os.SystemProperties;
+import android.util.Log;
 import android.util.Slog;
 
 import com.android.internal.R;
@@ -78,8 +80,11 @@ final class ExtendActivityStack extends ActivityStack {
         final long origId = Binder.clearCallingIdentity();
         try {
             IBinder b = ServiceManager.getService(Context.USER_SERVICE);
-            UserManagerService um = (UserManagerService)IUserManager.Stub.asInterface(b);
-            return um.getUserInfo(userId);
+            UserManagerService um = (UserManagerService) IUserManager.Stub.asInterface(b);
+            if (um == null) {
+                Slog.e(TAG, "Failed to retrieve a UserManagerService instance.");
+                return null;
+            } else return um.getUserInfo(userId);
         } finally {
             Binder.restoreCallingIdentity(origId);
         }
@@ -101,6 +106,7 @@ final class ExtendActivityStack extends ActivityStack {
      */
     protected boolean isTopRunningActivityinContainter(int cid) {
         ActivityRecord r = topRunningActivityLocked(null);
+        if (r == null) return false;
         UserInfo ui = getUserInfoLocked(r.userId);
 
         if (ui != null) {
@@ -123,12 +129,14 @@ final class ExtendActivityStack extends ActivityStack {
             throws RemoteException {
         ResolveInfo info = rInfo;
         UserInfo userinfo = getUserInfoLocked(userId);
-        if(rInfo == null && userinfo != null && userinfo.isContainer()){
-            info = AppGlobals.getPackageManager().resolveIntent(
+        if (rInfo == null && userinfo != null && userinfo.isContainer()) {
+            IPackageManager pm = AppGlobals.getPackageManager();
+            if (pm == null) return info;
+            info = pm.resolveIntent(
                     intent, resolvedType,
                     PackageManager.MATCH_DEFAULT_ONLY
                     | ActivityManagerService.STOCK_PM_FLAGS, userinfo.containerOwner);
-                }
+        }
         return info;
     }
 
@@ -142,11 +150,6 @@ final class ExtendActivityStack extends ActivityStack {
                 && userInfo.isContainer()
                 && !containerService.isContainerActive(next.userId)) {
                     containerService.lockContainer(next.userId);
-            } else {
-                // ARKHAM-336. Set an Android system native property when
-                // having running on the screen a container application
-                SystemProperties.set("sys.container",
-                    String.valueOf(isTopRunningActivityinContainter(0)));
             }
         } catch (RemoteException ex) {
             Slog.e(TAG, "checkActivityOfContainer: Failed talking with CMS: ", ex);

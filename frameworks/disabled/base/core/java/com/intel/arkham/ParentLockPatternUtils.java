@@ -23,6 +23,7 @@ import com.android.internal.widget.LockPatternView;
 
 import java.util.List;
 
+/** @hide */
 public abstract class ParentLockPatternUtils {
     // ARKHAM - 596, isContainerUserMode - setting false will show primary user's keyguard.
     protected static volatile boolean isContainerUserMode = false;

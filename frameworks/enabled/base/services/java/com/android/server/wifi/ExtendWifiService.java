@@ -60,12 +60,16 @@ public final class ExtendWifiService extends WifiService {
         try {
             int currentUser = ActivityManager.getCurrentUser();
             if (userId != currentUser) {
-                UserInfo userInfo = getUserManager().getUserInfo(userId);
-                // FIXME: should check for containerOwner == currentUser
-                if (!userInfo.isContainer())
+                IUserManager um = getUserManager();
+                if (um == null) {
                     return new ArrayList<ScanResult>();
                 }
-                return mWifiStateMachine.syncGetScanResultsList();
+                UserInfo userInfo = um.getUserInfo(userId);
+                if (userInfo != null && !userInfo.isContainer()) {
+                    return new ArrayList<ScanResult>();
+                }
+            }
+            return mWifiStateMachine.syncGetScanResultsList();
 
         } catch (RemoteException e) {
             Slog.e(TAG, "Remote Exception calling user manager", e);
@@ -79,8 +83,10 @@ public final class ExtendWifiService extends WifiService {
     * ARKHAM 621 getUserManager
     */
     private IUserManager getUserManager() {
-        if (mUm == null)
+        if (mUm == null) {
             mUm = IUserManager.Stub.asInterface(ServiceManager.getService(Context.USER_SERVICE));
-            return mUm;
+        }
+        if (mUm == null) Slog.e(TAG, "Failed to retrieve a UserManager instance.");
+        return mUm;
     }
 }

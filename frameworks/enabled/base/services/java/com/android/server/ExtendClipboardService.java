@@ -16,6 +16,7 @@
 
 package com.android.server;
 
+import android.app.AppOpsManager;
 import android.content.ClipData;
 import android.content.Context;
 import android.content.Intent;
@@ -28,6 +29,7 @@ import android.os.RemoteCallbackList;
 import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.os.UserHandle;
+import android.util.Log;
 import android.util.Slog;
 
 import com.intel.arkham.ContainerConstants;
@@ -45,9 +47,11 @@ import java.util.List;
 public class ExtendClipboardService extends ClipboardService {
     private static final String TAG = "ExtendClipboardService";
     private ContainerPolicyManager mContainerPolicyManager;
+    private final AppOpsManager mAppOps;
 
     public ExtendClipboardService(Context context) {
         super(context);
+        mAppOps = (AppOpsManager)context.getSystemService(Context.APP_OPS_SERVICE);
     }
 
 
@@ -59,16 +63,25 @@ public class ExtendClipboardService extends ClipboardService {
         PerUserClipboard clipboard = getClipboard(userId);
         clipboard.primaryClip = clip;
         final int n = clipboard.primaryClipListeners.beginBroadcast();
-        for (int i = 0; i < n; i++) {
-            try {
-                clipboard.primaryClipListeners.getBroadcastItem(i).dispatchPrimaryClipChanged();
-            } catch (RemoteException e) {
-                 // The RemoteCallbackList will take care of removing
-                 // the dead object for us.
-                 Slog.e(TAG, "Error occured: " + e.getMessage());
+        try {
+            for (int i = 0; i < n; i++) {
+                try {
+                    ListenerInfo li = (ListenerInfo)
+                        clipboard.primaryClipListeners.getBroadcastCookie(i);
+                    if (mAppOps.checkOpNoThrow(AppOpsManager.OP_READ_CLIPBOARD, li.mUid,
+                                li.mPackageName) == AppOpsManager.MODE_ALLOWED) {
+                        clipboard.primaryClipListeners.getBroadcastItem(i)
+                                .dispatchPrimaryClipChanged();
+                    }
+                } catch (RemoteException e) {
+                    // The RemoteCallbackList will take care of removing
+                    // the dead object for us.
+                    Slog.e(TAG, "Error occured: " + e.getMessage());
+                }
             }
+        } finally {
+            clipboard.primaryClipListeners.finishBroadcast();
         }
-        clipboard.primaryClipListeners.finishBroadcast();
     }
 
     // For ARKHAM-206
@@ -83,23 +96,30 @@ public class ExtendClipboardService extends ClipboardService {
         return mContainerPolicyManager;
     }
 
-    public void setPrimaryClip(ClipData clip) {
+    public void setPrimaryClip(ClipData clip, String callingPackage) {
+        super.setPrimaryClip(clip, callingPackage);
         synchronized (this) {
-            if (clip != null && clip.getItemCount() <= 0) {
-                throw new IllegalArgumentException("No items");
-            }
-            checkDataOwnerLocked(clip, Binder.getCallingUid());
-            clearActiveOwnersLocked();
-
             int callerId = UserHandle.getCallingUserId();
-
-            // For current user, we put the clip data anyway
-            putClip(clip, callerId);
+            final int callingUid = Binder.getCallingUid();
+            if (mAppOps.noteOp(AppOpsManager.OP_WRITE_CLIPBOARD, callingUid,
+                    callingPackage) != AppOpsManager.MODE_ALLOWED) {
+                return;
+            }
             long token = Binder.clearCallingIdentity();
             IBinder b = ServiceManager.getService(ContainerConstants.CONTAINER_MANAGER_SERVICE);
             IContainerManager containerService = IContainerManager.Stub.asInterface(b);
+            if (containerService == null) {
+                Log.e(TAG, "Failed to retrieve a ContainerManagerService instance.");
+                Binder.restoreCallingIdentity(token);
+                return;
+            }
             IUserManager userManager = IUserManager.Stub.
                     asInterface(ServiceManager.getService(Context.USER_SERVICE));
+            if (userManager == null) {
+                Log.e(TAG, "Failed to retrieve a UserManager instance.");
+                Binder.restoreCallingIdentity(token);
+                return;
+            }
             List<ContainerInfo> containers = null;
             try {
                 // For Arkham-206 Check the outbound policy for source (if container)
@@ -110,6 +130,10 @@ public class ExtendClipboardService extends ClipboardService {
                 int ownerId = UserHandle.USER_OWNER;
                 ContainerInfo container = containerService.getContainerFromCid(callerId);
                 ContainerPolicyManager cpm = getContainerPolicyManager();
+                if (cpm == null) {
+                    Log.e(TAG, "Failed to retrieve a ContainerPolicyManager instance.");
+                    return;
+                }
                 if (container == null) {
                     // Caller can be container owner
                     ownerId = callerId;

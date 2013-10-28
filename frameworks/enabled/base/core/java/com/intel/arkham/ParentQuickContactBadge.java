@@ -26,14 +26,12 @@ import android.provider.ContactsContract;
 
 import java.util.List;
 
+/** @hide */
 public class ParentQuickContactBadge {
-
-    private static final int CONTAINER_ID_OFFSET = 1000000;
-    private static final int BASE_CID = 10;
 
     // ARKHAM-406 Differentiate primary and container contacts
     private boolean isContainerContact = false;
-    private Drawable containerOverlay;
+    private Drawable mContainerOverlay;
 
     public ParentQuickContactBadge() {
     }
@@ -41,52 +39,30 @@ public class ParentQuickContactBadge {
     public void drawableStateChanged(Drawable mOverlay, int[] drawableState) {
         if (mOverlay != null && mOverlay.isStateful()) {
             // ARKHAM-406 Differentiate primary and container contacts
-            if (containerOverlay != null && containerOverlay.isStateful()) {
-                containerOverlay.setState(drawableState);
+            if (mContainerOverlay != null && mContainerOverlay.isStateful()) {
+                mContainerOverlay.setState(drawableState);
             }
         }
     }
 
     public void onContainerDraw(Canvas canvas, int width, int height, int mPaddingTop,
             int mPaddingLeft) {
-        // ARKHAM-828: Draw containerOverlay if not null and if it's a container
-        // contact
-        boolean drawContainerOverlay = isContainerContact && (containerOverlay != null);
+        // ARKHAM-828: Draw mContainerOverlay if not null and if it's a container contact
+        boolean drawContainerOverlay = isContainerContact && (mContainerOverlay != null);
 
         // ARKHAM-406 Differentiate primary and container contacts
         if (drawContainerOverlay)
-            containerOverlay.setBounds(0, 0, width / 2, height / 2);
+            mContainerOverlay.setBounds(0, 0, width / 2, height / 2);
 
         if (mPaddingTop == 0 && mPaddingLeft == 0) {
-            if (drawContainerOverlay) containerOverlay.draw(canvas);
+            if (drawContainerOverlay) mContainerOverlay.draw(canvas);
         } else {
             int saveCount = canvas.getSaveCount();
             canvas.save();
             canvas.translate(mPaddingLeft, mPaddingTop);
-            if (drawContainerOverlay) containerOverlay.draw(canvas);
+            if (drawContainerOverlay) mContainerOverlay.draw(canvas);
             canvas.restoreToCount(saveCount);
         }
-    }
-
-    public void assignContactUri(Uri contactUri){
-        // ARKHAM-406 Differentiate primary and container contacts
-        if (contactUri != null) {
-            List<String> uriSegments = contactUri.getPathSegments();
-            // Manually dialed numbers will send URIs with the following format:
-            // .../phone_lookup/<phone number>
-            if (!uriSegments.get(0).equals("phone_lookup") && uriSegments.size() > 3) {
-                // Contacts called from the Phone/People apps will
-                // send URIs with the following format:
-                // .../contacts/lookup/<internalID/<contactID>/...
-                String contactIDSegment = uriSegments.get(3);
-                long contactId = Long.parseLong(contactIDSegment);
-                if (!ContactsContract.isProfileId(contactId) &&
-                        contactId >= (CONTAINER_ID_OFFSET * BASE_CID)) {
-                    isContainerContact = true;
-                }
-            }
-        }
-        // END ARKHAM-406
     }
 
     // ARKHAM-406 Differentiate primary and container contacts
@@ -96,18 +72,23 @@ public class ParentQuickContactBadge {
         if (containerInfo != null) {
             String containerPackage = containerInfo.getAdminPackageName();
             try {
-                containerOverlay = pm.getApplicationIcon(containerPackage);
+                mContainerOverlay = pm.getApplicationIcon(containerPackage);
             } catch (NameNotFoundException e) {
                 e.printStackTrace();
             }
-        } // TODO: load a placeholder icon if container isn't found?
+        }
     }
 
     // Find out which container this contact belongs to
     private ContainerInfo resolveContainer(Uri contactUri, Context context) {
-        String idSegment = contactUri.getPathSegments().get(3);
+        if (contactUri == null || contactUri.getPathSegments() == null) {
+            return null;
+        }
+        List<String> segments = contactUri.getPathSegments();
+        /** Getting the 4-th element in the list (0..3) */
+        String idSegment = (segments.size() >= 4 ? segments.get(3) : null);
         if (idSegment != null) {
-            long cid = Long.parseLong(idSegment) / CONTAINER_ID_OFFSET;
+            long cid = Long.parseLong(idSegment) / ContainerConstants.CONTAINER_CONTACTID_OFFSET;
             if (ContactsContract.isProfileId(cid)) {
                 return null;
             }
@@ -119,8 +100,17 @@ public class ParentQuickContactBadge {
     // END ARKHAM-406
 
     public void onContactUriChanged(Uri contactUri, Context context) {
-        if (isContainerContact) {
+        if (resolveContainer(contactUri, context) != null) {
+            isContainerContact = true;
             loadContainerIcon(contactUri, context);
+        } else {
+            isContainerContact = false;
+            // If the new contact doesn't belong to a container, hide the
+            // container icon overlay, if present.
+            if (mContainerOverlay != null) {
+                mContainerOverlay.setVisible(false, false);
+                mContainerOverlay = null;
+            }
         }
     }
 }

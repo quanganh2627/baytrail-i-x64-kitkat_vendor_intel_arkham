@@ -16,13 +16,18 @@
 
 package com.android.providers.contacts;
 
+import android.accounts.Account;
+import android.content.BroadcastReceiver;
 import android.content.ContentUris;
 import android.content.ContentValues;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.UriMatcher;
 import android.content.pm.UserInfo;
 import android.content.res.AssetFileDescriptor;
 import android.database.Cursor;
+import android.database.sqlite.SQLiteDatabase;
 import android.net.Uri;
 import android.os.Binder;
 import android.os.CancellationSignal;
@@ -30,8 +35,15 @@ import android.os.UserHandle;
 import android.os.UserManager;
 import android.provider.ContactsContract;
 import android.provider.ContactsContract.RawContacts;
+import android.provider.ContactsContract.StreamItems;
+import android.provider.ContactsContract.StreamItemPhotos;
 import android.util.Log;
 
+import com.android.providers.contacts.ContactsDatabaseHelper.AccountsColumns;
+import com.android.providers.contacts.ContactsDatabaseHelper.GroupsColumns;
+import com.android.providers.contacts.ContactsDatabaseHelper.PresenceColumns;
+import com.android.providers.contacts.ContactsDatabaseHelper.RawContactsColumns;
+import com.android.providers.contacts.ContactsDatabaseHelper.Tables;
 import com.intel.arkham.ContainerConstants;
 import com.intel.arkham.ContainerCommons;
 import com.intel.arkham.ContainerInfo;
@@ -40,6 +52,7 @@ import com.intel.arkham.ContainerPolicyManager;
 
 import java.io.FileNotFoundException;
 import java.util.List;
+import java.util.Set;
 
 /** @hide */
 public class ExtendContactsProvider2 extends ContactsProvider2 {
@@ -70,6 +83,71 @@ public class ExtendContactsProvider2 extends ContactsProvider2 {
         mContainerManager = new ContainerManager(getContext());
         /* ARKHAM-824: Remove ContainerLauncher settings; Use CPM for retrieving
          * the contacts merging option. */
+        IntentFilter containerDisabledFilter = new IntentFilter();
+        containerDisabledFilter.addAction(ContainerConstants.ACTION_CLEAR_CONTACTS);
+        getContext().registerReceiver(new BroadcastReceiver() {
+                public void onReceive(Context context, Intent intent) {
+                    Object[] objAccount = intent.getParcelableArrayExtra(
+                            ContainerConstants.EXTRA_INTENT_ACCOUNTS);
+                    final ContactsDatabaseHelper dbHelper = mDbHelper.get();
+                    final SQLiteDatabase db = dbHelper.getWritableDatabase();
+                    db.beginTransaction();
+                    final Set<AccountWithDataSet> knownAccountsWithDataSets =
+                            dbHelper.getAllAccountsWithDataSets();
+                    for (AccountWithDataSet knownAccountWithDataSet : knownAccountsWithDataSets) {
+                        for (int i = 0; i < objAccount.length; i++) {
+                            Account account = (Account)objAccount[i];
+                            if (account.name.equals(knownAccountWithDataSet.getAccountName())) {
+                                final Long accountIdOrNull = dbHelper.getAccountIdOrNull(
+                                        knownAccountWithDataSet);
+                                if (accountIdOrNull != null) {
+                                    final String accountId = Long.toString(accountIdOrNull);
+                                    final String[] accountIdParams =
+                                            new String[] {accountId};
+                                    db.execSQL(
+                                            "DELETE FROM " + Tables.GROUPS
+                                            + " WHERE " + GroupsColumns.ACCOUNT_ID + " = ?",
+                                            accountIdParams);
+                                    db.execSQL(
+                                            "DELETE FROM " + Tables.PRESENCE
+                                            + " WHERE " + PresenceColumns.RAW_CONTACT_ID + " IN ("
+                                            + "SELECT " + RawContacts._ID
+                                            + " FROM " + Tables.RAW_CONTACTS
+                                            + " WHERE " + RawContactsColumns.ACCOUNT_ID + " = ?)",
+                                            accountIdParams);
+                                    db.execSQL(
+                                            "DELETE FROM " + Tables.STREAM_ITEM_PHOTOS
+                                            + " WHERE " + StreamItemPhotos.STREAM_ITEM_ID + " IN ("
+                                            + "SELECT " + StreamItems._ID
+                                            + " FROM " + Tables.STREAM_ITEMS
+                                            + " WHERE " + StreamItems.RAW_CONTACT_ID + " IN ("
+                                            + "SELECT " + RawContacts._ID
+                                            + " FROM " + Tables.RAW_CONTACTS
+                                            + " WHERE " + RawContactsColumns.ACCOUNT_ID + "=?))",
+                                            accountIdParams);
+                                    db.execSQL(
+                                            "DELETE FROM " + Tables.STREAM_ITEMS
+                                            + " WHERE " + StreamItems.RAW_CONTACT_ID + " IN ("
+                                            + "SELECT " + RawContacts._ID
+                                            + " FROM " + Tables.RAW_CONTACTS
+                                            + " WHERE " + RawContactsColumns.ACCOUNT_ID + " = ?)",
+                                            accountIdParams);
+                                    db.execSQL(
+                                            "DELETE FROM " + Tables.RAW_CONTACTS
+                                            + " WHERE " + RawContactsColumns.ACCOUNT_ID + " = ?",
+                                            accountIdParams);
+                                    db.execSQL(
+                                            "DELETE FROM " + Tables.ACCOUNTS
+                                            + " WHERE " + AccountsColumns._ID + "=?",
+                                            accountIdParams);
+                                }
+                            }
+                        }
+                    }
+                    db.setTransactionSuccessful();
+                    db.endTransaction();
+                }
+            }, containerDisabledFilter);
         mContainerPolicyManager = (ContainerPolicyManager)
                 getContext().getSystemService(ContainerConstants.CONTAINER_POLICY_SERVICE);
         return true;
@@ -225,7 +303,7 @@ public class ExtendContactsProvider2 extends ContactsProvider2 {
      * ARKHAM-534 - Fetch container contact photos through the proxy provider
      */
     protected AssetFileDescriptor openContainerAssetFile(Uri uri, String mode)
-            throws FileNotFoundException {
+        throws FileNotFoundException {
         AssetFileDescriptor ret = null;
         if (sUriMatcher.match(uri) == DISPLAY_PHOTO_ID) {
             // If the photo belongs to a container, fetch it through the ContactsProviderProxy.
@@ -255,8 +333,62 @@ public class ExtendContactsProvider2 extends ContactsProvider2 {
         return ret;
     }
 
-   protected Cursor[] queryContainerContact(Uri uri, String[] projection, String selection,
-            String[] selectionArgs,String sortOrder, CancellationSignal cancellationSignal) {
+    protected int deleteContainerContact(Uri uri, String selection, String[] selectionArgs) {
+        String accountName = getQueryParameter(uri, RawContacts.ACCOUNT_NAME);
+        String accountType = getQueryParameter(uri, RawContacts.ACCOUNT_TYPE);
+
+        int callerId = Binder.getCallingUid();
+        int uid = UserHandle.getUserId(callerId);
+        UserManager um = (UserManager) getContext().getSystemService(Context.USER_SERVICE);
+
+        if (!um.getUserInfo(uid).isContainer() && isFromContacts(callerId)) {
+            List<ContainerInfo> containers = mContainerManager.listContainers();
+            if (containers == null) {
+                return 0;
+            }
+            // If the account name is passed via uri and the account is a
+            // SYNC_ACCOUNT_TYPE query the specific container
+            if (accountName != null && accountType != null && accountType.equals(
+                    ContainerConstants.SYNC_ACCOUNT_TYPE)) {
+                for (int i = 0; i < containers.size(); i++) {
+                    ContainerInfo container = containers.get(i);
+                    String containerName = container.getContainerName();
+                    if (!accountName.equals(containerName)) {
+                        continue;
+                    }
+                    int cid = container.getContainerId();
+                    UserInfo ui = um.getUserInfo(cid);
+                    if (containerExportsContacts(cid) != ContainerCommons.MergeContacts.ENCRYPTED ||
+                            (ui != null && uid != ui.containerOwner)) {
+                        return 0;
+                    }
+                    Uri proxyUri = buildProxyUri(uri, cid);
+                    return getContext().getContentResolver().delete(
+                            proxyUri, selection, selectionArgs);
+                }
+            } else {
+                for (int i = 0; i < containers.size(); i++) {
+                    ContainerInfo container = containers.get(i);
+                    int cid = container.getContainerId();
+                    UserInfo ui = um.getUserInfo(cid);
+                    if (containerExportsContacts(cid) != ContainerCommons.MergeContacts.ENCRYPTED
+                            || (ui != null && uid != ui.containerOwner)) {
+                        continue;
+                    }
+                    Uri proxyUri = buildProxyUri(uri, cid);
+                    int ret = getContext().getContentResolver().delete(
+                            proxyUri, selection, selectionArgs);
+                    if (ret > 0) {
+                        return ret;
+                    }
+                }
+            }
+        }
+        return 0;
+    }
+
+    protected Cursor[] queryContainerContact(Uri uri, String[] projection, String selection,
+            String[] selectionArgs, String sortOrder, CancellationSignal cancellationSignal) {
         // ARKHAM - 292, 447 START: First, query container contacts providers if it's the case
         // We do that ONLY as the non-container user and if the caller is com.android.contacts
         String accountName = getQueryParameter(uri, RawContacts.ACCOUNT_NAME);
@@ -276,7 +408,7 @@ public class ExtendContactsProvider2 extends ContactsProvider2 {
             // SYNC_ACCOUNT_TYPE query the specific container
             if (accountName != null && accountType != null
                 && accountType.equals(ContainerConstants.SYNC_ACCOUNT_TYPE)) {
-                cursorArray = new Cursor[containers.size() + 1];
+                cursorArray = new Cursor[1];
                 for (int i = 0; i < containers.size(); i++) {
                     ContainerInfo container = containers.get(i);
                     String containerName = container.getContainerName();
@@ -292,6 +424,7 @@ public class ExtendContactsProvider2 extends ContactsProvider2 {
                     Uri proxyUri = buildProxyUri(uri, cid);
                     cursorArray[0] = getContext().getContentResolver().query(proxyUri, projection,
                             selection, selectionArgs, sortOrder, cancellationSignal);
+                    break;
                 }
             } else { // Otherwise query all containers
                 cursorArray = new Cursor[containers.size() + 1];
@@ -313,5 +446,5 @@ public class ExtendContactsProvider2 extends ContactsProvider2 {
             }
         }
         return cursorArray;
-   }
+    }
 }

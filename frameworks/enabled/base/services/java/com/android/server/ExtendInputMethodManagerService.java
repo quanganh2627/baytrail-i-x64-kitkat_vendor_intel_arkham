@@ -17,6 +17,7 @@
 package com.android.server;
 
 import java.util.List;
+
 import com.android.internal.inputmethod.InputMethodUtils;
 import com.android.internal.view.IInputMethod;
 import com.android.internal.widget.LockPatternUtils;
@@ -26,6 +27,7 @@ import com.android.server.am.ActivityManagerService;
 import com.android.server.am.ExtendActivityManagerService;
 import com.android.server.am.ExtendActivityManagerService.ForegroundUserObserver;
 
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.pm.UserInfo;
 import android.os.Binder;
@@ -36,12 +38,14 @@ import android.os.UserManager;
 import android.text.style.SuggestionSpan;
 import android.util.Pair;
 import android.util.Slog;
+import android.view.InputChannel;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodInfo;
 import android.view.inputmethod.InputMethodSubtype;
 
 import com.android.internal.view.IInputContext;
 import com.android.internal.view.IInputMethodClient;
+import com.android.internal.view.IInputMethodSession;
 import com.android.internal.view.InputBindResult;
 import com.android.internal.widget.LockPatternUtils;
 import com.android.server.am.ActivityManagerService;
@@ -76,10 +80,15 @@ public class ExtendInputMethodManagerService extends InputMethodManagerService {
         mlpu = new LockPatternUtils(mContext);
     }
 
-    protected void checkAndShowSystemImeForContainer(){
-        if(mlpu.isContainerUserMode() && isScreenLocked()) {
-            String id = InputMethodUtils.getMostApplicableDefaultIME(mSettings
-                    .getEnabledInputMethodListLocked()).getId();
+    protected void checkAndShowSystemImeForContainer() {
+        if (mlpu.isContainerUserMode() && isScreenLocked()) {
+            InputMethodInfo imi = InputMethodUtils.getMostApplicableDefaultIME(mSettings
+                    .getEnabledInputMethodListLocked());
+            if (imi == null) {
+                Slog.e(TAG, "Failed to retrieve default IME.");
+                return;
+            }
+            String id = imi.getId();
             setInputMethodLocked(id, mSettings.getSelectedInputMethodSubtypeId(id));
             isResetPending = true;
             // resetDefaultImeLocked(mContext);
@@ -122,9 +131,11 @@ public class ExtendInputMethodManagerService extends InputMethodManagerService {
             final InputMethodInfo lastImi;
             if (lastIme != null) {
                 lastImi = mMethodMap.get(lastIme.first);
-                String id = lastImi.getId();
-                isResetPending = false;
-                setInputMethodLocked(id, mSettings.getSelectedInputMethodSubtypeId(id));
+                if (lastImi != null) {
+                    String id = lastImi.getId();
+                    isResetPending = false;
+                    setInputMethodLocked(id, mSettings.getSelectedInputMethodSubtypeId(id));
+                }
             }
         }
     }
@@ -138,6 +149,13 @@ public class ExtendInputMethodManagerService extends InputMethodManagerService {
     public List<InputMethodInfo> getEnabledInputMethodList() {
         synchronized (ActivityManagerService.self()) {
             return super.getEnabledInputMethodList();
+        }
+    }
+
+    @Override
+    public List<InputMethodInfo> getInputMethodList() {
+        synchronized (ActivityManagerService.self()) {
+            return super.getInputMethodList();
         }
     }
 
@@ -328,6 +346,34 @@ public class ExtendInputMethodManagerService extends InputMethodManagerService {
     public void setAdditionalInputMethodSubtypes(String imiId, InputMethodSubtype[] subtypes) {
         synchronized (ActivityManagerService.self()) {
             super.setAdditionalInputMethodSubtypes(imiId, subtypes);
+        }
+    }
+
+    @Override
+    public void onServiceDisconnected(ComponentName name) {
+        synchronized (ActivityManagerService.self()) {
+            super.onServiceDisconnected(name);
+        }
+    }
+
+    @Override
+    public void onServiceConnected(ComponentName name, IBinder service) {
+        synchronized (ActivityManagerService.self()) {
+            super.onServiceConnected(name, service);
+        }
+    }
+
+    @Override
+    void onSessionCreated(IInputMethod method, IInputMethodSession session, InputChannel channel) {
+        synchronized (ActivityManagerService.self()) {
+            super.onSessionCreated(method, session, channel);
+        }
+    }
+
+    @Override
+    void hideInputMethodMenu() {
+        synchronized (ActivityManagerService.self()) {
+            super.hideInputMethodMenu();
         }
     }
 }

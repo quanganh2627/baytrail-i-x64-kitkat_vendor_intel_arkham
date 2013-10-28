@@ -23,6 +23,7 @@ import android.os.PowerManager;
 import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.os.UserHandle;
+import android.util.Log;
 
 import com.android.internal.widget.LockPatternUtils;
 import com.android.internal.policy.impl.keyguard.KeyguardViewMediator;
@@ -31,6 +32,8 @@ import java.util.HashMap;
 import java.util.Map;
 
 public abstract class ParentPhoneWindowManager {
+
+    static final String TAG = "PhoneWindowManager";
 
     /* ARKHAM-424: START - Set the timeout password period based on device activity
      * keep the Runnable objects for closing containers locally, so we can repost them
@@ -66,23 +69,29 @@ public abstract class ParentPhoneWindowManager {
 
     public void screenTurnedOff(int why) {
         // ARKHAM-596 Starts.
-        try{
+        try {
             // reset lock pattern utils, so that primary user keyguard comes up.
-            if (!getContainerManager().isTopRunningActivityInContainer(0)) {
-                mLockPatternUtils.resetContainerUserMode();
-            }
-            // close all containers when power button is pressed.
-            if (why == PowerManager.GO_TO_SLEEP_REASON_USER) {
+            mLockPatternUtils.resetContainerUserMode();
+            /* ARKHAM-1278 Close all containers when the power button is pressed.
+             * The constant name "GO_TO_SLEEP_REASON_TIMEOUT" is misleading. This constant actually
+             * corresponds to the action of the user locking the device by pressing the power
+             * button.
+             */
+            if (why == PowerManager.GO_TO_SLEEP_REASON_TIMEOUT) {
                 removeAllContainerCallbacks();
-                getContainerManager().lockContainerNow(UserHandle.USER_ALL);
+                IContainerManager cm = getContainerManager();
+                if (cm == null) return;
+                cm.lockContainerNow(UserHandle.USER_ALL);
             }
-        }catch(RemoteException e){
+        } catch (RemoteException e) {
             // Should not happen.
         }
         // ARKHAM-596 Ends.
     }
 
     public void userActivity() {
+        /* ARKHAM-1278 Interacting with the keyguard shouldn't be considered "user activity". */
+        if (getKeyguardViewMediator().isShowing()) return;
         /* ARKHAM-424: START - Set the timeout password period based on device activity
          * On user activity, reset all the active container close Runnable objects.
          */
@@ -92,10 +101,12 @@ public abstract class ParentPhoneWindowManager {
                 int cid = entry.getKey();
                 // If this container timeout type is based on container activity, check the current
                 // running activity
-                if (action.timeoutType == ContainerPolicyManager.TIMEOUT_TYPE_CONTAINER_ACTIVITY) {
+                if (action.timeoutType == ContainerConstants.TIMEOUT_TYPE_CONTAINER_ACTIVITY) {
                     // check for current activity; if not container activity, continue
                     try {
-                        if (!getContainerManager().isTopRunningActivityInContainer(cid)) {
+                        IContainerManager cm = getContainerManager();
+                        if (cm == null) return;
+                        if (!cm.isTopRunningActivityInContainer(cid)) {
                             continue;
                         }
                     } catch (RemoteException ex) {}
@@ -111,9 +122,12 @@ public abstract class ParentPhoneWindowManager {
      * ARKHAM-596, used when screen turned off.
      */
     private void removeAllContainerCallbacks() {
-        for (Map.Entry<Integer, ContainerCloseAction> entry : mContainerCloseActions.entrySet()) {
-            ContainerCloseAction action = entry.getValue();
-            getHandler().removeCallbacks(action.closeAction);
+        synchronized (mContainerCloseActions) {
+            for (Map.Entry<Integer, ContainerCloseAction> entry
+                    : mContainerCloseActions.entrySet()) {
+                ContainerCloseAction action = entry.getValue();
+                getHandler().removeCallbacks(action.closeAction);
+            }
         }
     }
 
@@ -129,29 +143,37 @@ public abstract class ParentPhoneWindowManager {
         }
 
         public void run () {
-            try{
-                getContainerManager().lockContainerNow(cid);
+            try {
+                IContainerManager cm = getContainerManager();
+                if (cm == null) return;
+                cm.lockContainerNow(cid);
                 removeContainerCloseAction(cid);
-                if (getKeyguardViewMediator() != null &&
-                        getContainerManager().isTopRunningActivityInContainer(cid)) {
+                /* ARKHAM-1278 Don't override the primary user's keyguard. */
+                KeyguardViewMediator kvm = getKeyguardViewMediator();
+                if (kvm != null && cm.isTopRunningActivityInContainer(cid) &&
+                        !(kvm.isShowing() && !mLockPatternUtils.isContainerUserMode())) {
+                /* End ARKHAM-1278. */
                     mLockPatternUtils.setContainerUserMode(cid);
-                    getKeyguardViewMediator().doKeyguardTimeout(null);
+                    kvm.doKeyguardTimeout(null);
                 }
-            }catch(RemoteException e){
+            } catch (RemoteException e) {
                 // Should not happen.
             }
         }
     }
     // ARKHAM-596.
     private IContainerManager mContainerManager;
-    private IContainerManager getContainerManager(){
-        if(mContainerManager == null){
+    private IContainerManager getContainerManager() {
+        if (mContainerManager == null) {
             IBinder b = ServiceManager.getService(ContainerConstants.CONTAINER_MANAGER_SERVICE);
             mContainerManager = IContainerManager.Stub.asInterface(b);
         }
+        if (mContainerManager == null)
+            Log.e(TAG, "Failed to retrieve a ContainerManagerService instance.");
         return mContainerManager;
     }
     // ARKHAM-596 Ends.
+
     /* ARKHAM-424: START - Set the timeout password period based on device activity
      * Public functions to be used by ContainerManagerService to post/remove Runnable
      * objects to be called after a timeout period, so that we can deactivate containers.
@@ -186,20 +208,29 @@ public abstract class ParentPhoneWindowManager {
 
     /**
      * ARKHAM-596, called from Container Manager Service when Launcher / DPM calls lockNow.
-     *
      */
     public void lockContainerNow(int cid, boolean isContainerOpen) {
-        if(!isContainerOpen){
-            ContainerCloseAction action = mContainerCloseActions.get(cid);
-            if (action == null) {
-                CloseAction runnable = new CloseAction(cid);
-                action = new ContainerCloseAction(runnable, 0, 0);
+        /* ARKHAM-1351 If the container has just been disabled, don't show the keyguard. */
+        try {
+            IContainerManager cm = getContainerManager();
+            if (cm != null && cm.isContainerDisabled(cid)) return;
+        } catch (RemoteException e) {
+            // Should not happen.
+        }
+        /* End ARKHAM-1351 */
+        synchronized (mContainerCloseActions) {
+            if (!isContainerOpen) {
+                ContainerCloseAction action = mContainerCloseActions.get(cid);
+                if (action == null) {
+                    CloseAction runnable = new CloseAction(cid);
+                    action = new ContainerCloseAction(runnable, 0, 0);
+                }
+                mContainerCloseActions.put(cid, action);
+                getHandler().post(action.closeAction);
+            } else {
+                mLockPatternUtils.setContainerUserMode(cid);
+                getKeyguardViewMediator().doKeyguardTimeout(null);
             }
-            mContainerCloseActions.put(cid, action);
-            getHandler().post(action.closeAction);
-        } else {
-            mLockPatternUtils.setContainerUserMode(cid);
-            getKeyguardViewMediator().doKeyguardTimeout(null);
         }
     }
 

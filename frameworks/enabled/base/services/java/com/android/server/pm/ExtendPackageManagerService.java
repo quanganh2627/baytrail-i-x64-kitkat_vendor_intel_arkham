@@ -23,6 +23,7 @@ import android.content.Intent;
 import android.content.IntentSender;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import static android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DEFAULT;
 import static android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED;
 import static android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED;
 import android.content.pm.PackageParser;
@@ -147,25 +148,32 @@ public class ExtendPackageManagerService extends PackageManagerService {
     public ResolveInfo resolveIntent(Intent intent, String resolvedType,
             int flags, int userId) {
         if (!sUserManager.exists(userId)) return null;
+
         // ARKHAM - 375, Adding exception to expand container visibility till its owner
-        int callingUid = UserHandle.getUserId(Binder.getCallingUid());
+        int callingUserId = UserHandle.getUserId(Binder.getCallingUid());
         long identity = Binder.clearCallingIdentity();
-        UserInfo userInfo = sUserManager.getUserInfo(callingUid);
-        if(!(userInfo.isContainer() && userInfo.containerOwner == userId))
+        UserInfo userInfo = sUserManager.getUserInfo(callingUserId);
+        if (userInfo != null && !(userInfo.isContainer() && userInfo.containerOwner == userId))
             Binder.restoreCallingIdentity(identity);
         enforceCrossUserPermission(Binder.getCallingUid(), userId, false, "resolve intent");
         // ARKHAM Change ends.
+
         List<ResolveInfo> query = queryIntentActivities(intent, resolvedType, flags, userId);
         // Restore the binder if this is a container request.
-        if((userInfo.isContainer() && userInfo.containerOwner == userId))
+        boolean containerRequest = userInfo != null &&
+                userInfo.isContainer() && userInfo.containerOwner == userId;
+        if (containerRequest)
             Binder.restoreCallingIdentity(identity);
+
         // ARKHAM - filter out non-system apps while extending resolve area to container owner.
         // Vendor apps are also considered as system apps.
-        if(userInfo!=null && userInfo.isContainer() && userInfo.containerOwner == userId){
-            for(ResolveInfo resolveInfo : query)
-                if(resolveInfo.activityInfo != null
-                    && !isSystemApp(resolveInfo.activityInfo.applicationInfo))
+        if (query != null && containerRequest) {
+            for (ResolveInfo resolveInfo : query) {
+                if (resolveInfo.activityInfo != null
+                    && !isSystemApp(resolveInfo.activityInfo.applicationInfo)) {
                     query.remove(resolveInfo);
+                }
+            }
         }
         // ARKHAM - Change Ends
         return chooseBestActivity(intent, resolvedType, flags, query, userId);
@@ -275,7 +283,8 @@ public class ExtendPackageManagerService extends PackageManagerService {
             Binder.restoreCallingIdentity(identity);
         }
         if ((userInfo != null && userInfo.isContainer())
-                && newState == COMPONENT_ENABLED_STATE_ENABLED) {
+                && (newState == COMPONENT_ENABLED_STATE_ENABLED
+                || newState == COMPONENT_ENABLED_STATE_DEFAULT)) {
             // Get container MDM package
             int callingUid = Binder.getCallingUid();
             IContainerManager cm = IContainerManager.Stub.asInterface(

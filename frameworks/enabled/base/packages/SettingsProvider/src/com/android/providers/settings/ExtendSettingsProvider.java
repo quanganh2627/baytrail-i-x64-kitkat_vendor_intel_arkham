@@ -42,7 +42,7 @@ public class ExtendSettingsProvider extends SettingsProvider {
         @Override
         public void onEvent(int event, String path) {
             // synchronize this with onUserStopping
-            synchronized(ExtendSettingsProvider.this) {
+            synchronized (ExtendSettingsProvider.this) {
                 // check for null value (onUserStopping might delete it)
                 AtomicInteger mutationCount = sKnownMutationsInFlight.get(mUserHandle);
                 if (mutationCount == null)

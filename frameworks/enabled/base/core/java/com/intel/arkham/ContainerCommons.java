@@ -31,6 +31,7 @@ import android.content.pm.PackageManager.NameNotFoundException;
 import android.content.pm.PackageInfo;
 import android.content.pm.ResolveInfo;
 import android.content.pm.UserInfo;
+import android.os.Binder;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.os.RemoteException;
@@ -98,7 +99,10 @@ public class ContainerCommons {
     private ContainerManager mCm;
     private ContainerPolicyManager mCpm;
 
-    // ARKHAM-226 - Add support for creating symbolic links
+    /**
+     * ARKHAM-226 - Add support for creating symbolic links
+     * @hide
+     */
     public static native int createSymLink(String oldpath, String newpath);
 
     static class PackageDataObserver extends IPackageDataObserver.Stub {
@@ -123,8 +127,14 @@ public class ContainerCommons {
      * All the installed applications in container owner and container are
      * enabled/disabled inside the container based on the whitelist.
      * @param cid Container ID
+     *
+     * @hide
      */
     public void setupContainerApplications(int cid, boolean isInit) {
+        if (mPm == null) {
+            Log.e(TAG, "Failed to retrieve a PackageManager instance.");
+            return;
+        }
         List<PackageInfo> userPackageList = new ArrayList<PackageInfo>();
         boolean changed = false;
         userPackageList = mPm.getInstalledPackages(0, cid);
@@ -141,6 +151,7 @@ public class ContainerCommons {
         }
     }
 
+    /** @hide */
     public void notifyLaunchers() {
         Intent intent = new Intent(ContainerConstants.ACTION_REFRESH_CONTAINER);
         mContext.sendBroadcastAsUser(intent, UserHandle.ALL);
@@ -154,11 +165,21 @@ public class ContainerCommons {
      * @param pkgVer Package version of the application
      * @param install Flag to indicate if the application should be installed first
      * @return True if any change was made
+     *
+     * @hide
      */
     public boolean setupContainerApplication(int cid, String pkgName, String pkgVer,
             boolean install, boolean isInit) {
         Log.d(TAG, "setupContainerApplication(cid=" + cid + ", pkgName=" + pkgName +
                 ", pkgVer=" + pkgVer + ", install=" + install + ", isInit=" + isInit +")");
+        if (mPm == null) {
+            Log.e(TAG, "Failed to retrieve a PackageManager instance.");
+            return false;
+        }
+        if (mCpm == null) {
+            Log.e(TAG, "Failed to retrieve a ContainerPolicyManager instance.");
+            return false;
+        }
         String pkgOrigin = mPm.getInstallerPackageName(pkgName);
         Log.d(TAG, "Package origin: " + pkgOrigin);
         if (pkgOrigin == null)
@@ -166,7 +187,6 @@ public class ContainerCommons {
         boolean whitelisted = mCpm.isApplicationWhiteListed(cid, pkgName
                 , pkgVer, pkgOrigin);
         boolean blacklisted = false;
-        boolean isNonUiGmsApp = isNonUiGmsApp(cid, pkgName);
         // enable system apps
         if (!mCm.isApplicationRemovable(cid, pkgName)) {
             // Blacklist applicable to system whitelist only
@@ -175,7 +195,8 @@ public class ContainerCommons {
             install = true;
         }
         // enable MDM
-        if (mCm.getContainerMdmPackageName().equals(pkgName)) {
+        String containerMdmPackageName = mCm.getContainerMdmPackageName();
+        if (containerMdmPackageName != null && containerMdmPackageName.equals(pkgName)) {
             whitelisted = true;
         }
         Log.d(TAG, "Package whitelisted=" + whitelisted + " blacklisted="
@@ -188,7 +209,7 @@ public class ContainerCommons {
         }
 
         if (pkg == null) {
-            if ((whitelisted || isNonUiGmsApp) && install) {
+            if (whitelisted && install) {
                 try {
                     Log.d(TAG, "Installing package to container");
                     mIPm.installExistingPackageAsUser(pkgName, cid);
@@ -204,14 +225,14 @@ public class ContainerCommons {
 
         Log.d(TAG, "Package enabled=" + pkg.applicationInfo.enabled);
         if (pkg.applicationInfo.enabled) {
-            if ((!whitelisted && !isNonUiGmsApp) || (isInit && !install)) {
+            if (!whitelisted || (isInit && !install)) {
                 mPm.setApplicationEnabledSetting(pkgName,
                         PackageManager.COMPONENT_ENABLED_STATE_DISABLED, 0);
                 mAm.clearApplicationUserData(pkgName, mPackageDataObserver);
                 return true;
             }
         } else {
-            if ((whitelisted || isNonUiGmsApp) && install) {
+            if (whitelisted && install) {
                 mPm.setApplicationEnabledSetting(pkgName,
                         PackageManager.COMPONENT_ENABLED_STATE_ENABLED, 0);
                 return true;
@@ -226,29 +247,12 @@ public class ContainerCommons {
     }
 
     /**
-     * Returns if a package name is a non UI GMS app
-     */
-    private boolean isNonUiGmsApp(int cid, String pkgName) {
-        boolean isNonUiGmsApp = false;
-        if (pkgName.startsWith(ContainerConstants.GMS_APPS_PACKAGE_PREFIX)) {
-            final Intent mainIntent = new Intent(Intent.ACTION_MAIN, null);
-            mainIntent.addCategory(Intent.CATEGORY_LAUNCHER);
-            mainIntent.setPackage(pkgName);
-            final List<ResolveInfo> apps = mPm
-                .queryIntentActivitiesAsUser(mainIntent, PackageManager.GET_ACTIVITIES |
-                        PackageManager.GET_DISABLED_COMPONENTS, mCm.getContainerOwnerId(cid));
-            if (apps == null || apps.size() == 0) {
-                isNonUiGmsApp = true;
-            }
-        }
-        return isNonUiGmsApp;
-    }
-
-    /**
      * Enable an app for a user.
      * Caller may require INTERACT_ACROSS_USER permission, if uid != myUid
      * @param pkgName App package name
      * @param uid User ID
+     *
+     * @hide
      */
     public static void enableApplicationForUser(String pkgName, int uid) throws RemoteException {
         ActivityThread.getPackageManager().setApplicationEnabledSetting(pkgName,
@@ -260,6 +264,8 @@ public class ContainerCommons {
      * Caller may require INTERACT_ACROSS_USER permission, if uid != myUid
      * @param pkgName App package name
      * @param uid User ID
+     *
+     * @hide
      */
     public static void disableApplicationForUser(String pkgName, int uid) throws RemoteException {
         ActivityThread.getPackageManager().setApplicationEnabledSetting(pkgName,
@@ -271,12 +277,15 @@ public class ContainerCommons {
      * Caller may require INTERACT_ACROSS_USER permission, if uid != myUid
      * @param cid Container ID
      * @param pkgName Package whose data is to be cleared
+     *
+     * @hide
      */
     public static void clearApplicationData(int cid, String pkgName) throws RemoteException {
         ActivityManagerNative.getDefault().clearApplicationUserData(pkgName,
                 mPackageDataObserver, cid);
     }
 
+    /** @hide */
     public static PackageInfo getPackageInfo(String pkgName, int uid) throws RemoteException {
         return ActivityThread.getPackageManager().getPackageInfo(pkgName, 0, uid);
     }
@@ -284,6 +293,8 @@ public class ContainerCommons {
     /**
      * ARKHAM-100 - START Add support for Container Launcher App.
      * called from ContainerInfo.java
+     *
+     * @hide
      */
     public static CharSequence getContainerLabel(ComponentInfo ci, PackageManager pm) {
         boolean isContainerApp = false;
@@ -328,15 +339,18 @@ public class ContainerCommons {
         return null;
     }
 
-    /* ARKHAM-100 - Add support for Container Launcher App
+    /**
+     * ARKHAM-100 - Add support for Container Launcher App
      * If the package identifies a container launcher app, append _container_id
      * to it's pkgName, so we can have the same package installed and running for
      * multiple containers.
      * Called from PackageParser.java
+     *
+     * @hide
      */
     public static String getContainerId(File sourceFile) {
-        boolean isContainerApp = (sourceFile.getParent() != null) &&
-                (sourceFile.getParent().equals("/data/containers"));
+        String parent = sourceFile.getParent();
+        boolean isContainerApp = (parent != null && parent.equals("/data/containers"));
         String pkgName = null;
         if(isContainerApp){
             String sDir = sourceFile.getName();
@@ -351,33 +365,54 @@ public class ContainerCommons {
         return pkgName;
     }
 
+    /** @hide */
     public static boolean isTopRunningActivityInContainer(int cid) throws RemoteException {
         IBinder b = ServiceManager.getService(ContainerConstants.CONTAINER_MANAGER_SERVICE);
-        IContainerManager mContainerManager = IContainerManager.Stub.asInterface(b);
-        return mContainerManager.isTopRunningActivityInContainer(cid);
+        IContainerManager containerManager = IContainerManager.Stub.asInterface(b);
+        if (containerManager == null) {
+            return false;
+        }
+        return containerManager.isTopRunningActivityInContainer(cid);
     }
 
+    /** @hide */
     public static boolean isContainerUser(Context context, int userId) {
-        return ContainerManager.getInstance(context).isContainerUser(userId);
+        ContainerManager containerManager =  ContainerManager.getInstance(context);
+        if (containerManager == null) {
+            return false;
+        }
+        return containerManager.isContainerUser(userId);
     }
 
+    /** @hide */
     public static String getContainerName(Context context, int userId) {
-        String name;
-        name = ContainerManager.getInstance(context).getContainerFromCid(userId).getContainerName();
-        return " [" + name + "]";
+        String name = null;
+        ContainerManager cm = ContainerManager.getInstance(context);
+        if (cm != null) {
+            ContainerInfo cn = cm.getContainerFromCid(userId);
+            if (cn != null) {
+                name = cn.getContainerName();
+                return " [" + name + "]";
+            }
+        }
+        return "";
     }
 
+    /** @hide */
     public static boolean isContainer(Context context) {
         UserManager um = (UserManager) context.getSystemService(Context.USER_SERVICE);
         if (um == null) {
             return false;
         }
+        long token = Binder.clearCallingIdentity();
         UserInfo userInfo = um.getUserInfo(UserHandle.myUserId());
+        Binder.restoreCallingIdentity(token);
         if (userInfo == null)
             return false;
         return userInfo.isContainer();
     }
 
+    /** @hide */
     public static boolean isContainer(int user) {
         IUserManager um = IUserManager.Stub.asInterface(ServiceManager.
                 getService(Context.USER_SERVICE));
@@ -395,9 +430,11 @@ public class ContainerCommons {
 
     /**
      * ARKHAM-844: Log a stacktrace for data folder accesses when container is not mounted
+     *
+     * @hide
      */
     public static void logContainerUnmountedAccess(int userId, String path) {
-        String systemBooted = SystemProperties.get("sys.boot_completed", null);
+        String systemBooted = SystemProperties.get("service.bootanim.exit", null);
         if (systemBooted == null || !systemBooted.equals("1"))
             return;
         IContainerManager containerService = IContainerManager.Stub.asInterface(
@@ -409,6 +446,26 @@ public class ContainerCommons {
         } catch (RemoteException e) {
             Log.w(TAG, "Failed talking with Container Manager Service!", e);
         }
+    }
+
+    /**
+     * Method to return if an account belongs to an unmounted container
+     *
+     * @hide
+     */
+    public static boolean isUnmountedContainerAccount(String accountName) {
+        IContainerManager cm = IContainerManager.Stub.asInterface(
+                ServiceManager.getService(ContainerConstants.CONTAINER_MANAGER_SERVICE));
+        if (cm == null) {
+            return false;
+        }
+        try {
+            int cid = cm.isContainerAccount(accountName);
+            return cid > 0 && !cm.isContainerOpened(cid) && !cm.isContainerDisabled(cid);
+        } catch (RemoteException e) {
+            Log.e(TAG, "Error connecting to ContainerManagerService");
+        }
+        return false;
     }
 
 }

@@ -98,4 +98,8 @@ public class ContainerCommons {
 
     public static void logContainerUnmountedAccess(int userId, String path) {
     }
+
+    public static boolean isUnmountedContainerAccount(String accountName) {
+        return false;
+    }
 }

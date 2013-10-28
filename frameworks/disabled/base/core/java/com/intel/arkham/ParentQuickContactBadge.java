@@ -21,6 +21,7 @@ import android.graphics.Canvas;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
 
+/** @hide */
 public class ParentQuickContactBadge {
 
     public void drawableStateChanged(Drawable mOverlay, int[] drawableState) {

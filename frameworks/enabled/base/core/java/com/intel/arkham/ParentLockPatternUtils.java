@@ -37,6 +37,7 @@ import com.android.internal.widget.LockPatternUtils;
 
 import java.util.List;
 
+/** @hide */
 public abstract class ParentLockPatternUtils {
 
     private static final String TAG = "LockPatternUtils";
@@ -75,6 +76,8 @@ public abstract class ParentLockPatternUtils {
     protected IContainerManager getContainerManager() {
         IContainerManager containerService = IContainerManager.Stub.asInterface(
                 (IBinder) ServiceManager.getService(ContainerConstants.CONTAINER_MANAGER_SERVICE));
+        if (containerService == null) Log.e(TAG,
+                "Failed to retrieve a ContainerManagerService instance.");
         return containerService;
     }
 
@@ -198,12 +201,17 @@ public abstract class ParentLockPatternUtils {
                 if(!containerService.changePassword(cid, hash, pwdType)) {
                     String s = mContext.getResources().getString(R.string.change_password_failed);
                     Toast.makeText(mContext, s, Toast.LENGTH_SHORT).show();
-                    Log.e(TAG, "Couldn't save lock password ");
+                    Log.e(TAG, "Couldn't save lock password.");
                     return false;
                 } else {
                     clearLock(isFallback);
                     if (!isPattern) {
-                        KeyStore.getInstance().password(pwd);
+                        KeyStore keyStore = KeyStore.getInstance();
+                        if (keyStore == null) {
+                            Log.e(TAG, "Failed to retrieve a KeyStore instance.");
+                            return false;
+                        }
+                        keyStore.password(pwd);
                     }
                 }
             } catch (RemoteException e) {
@@ -234,6 +242,10 @@ public abstract class ParentLockPatternUtils {
      */
     protected boolean isContainerUser(int userId) {
         IUserManager userManager = IUserManager.Stub.asInterface(ServiceManager.getService("user"));
+        if (userManager == null) {
+            Log.e(TAG, "Failed to retrieve a UserManager instance.");
+            return false;
+        }
         long ident = Binder.clearCallingIdentity();
         try {
             UserInfo userInfo = userManager.getUserInfo(userId);
@@ -281,11 +293,8 @@ public abstract class ParentLockPatternUtils {
             }
             matched = getLockSettings().checkPattern(absPatternToHash(pattern), userId);
             if (matched) {
-                unlockKeystore(LockPatternUtils.patternToString(pattern));
                 markContainerOpen(containerPassword, userId);
-                reportSuccessfulPasswordAttempt();
-            } else {
-                reportFailedPasswordAttempt();
+                unlockKeystore(LockPatternUtils.patternToString(pattern));
             }
             return matched;
         } catch (RemoteException re) {
@@ -314,11 +323,8 @@ public abstract class ParentLockPatternUtils {
 
             matched = getLockSettings().checkPassword(passwordToHash(password), userId);
             if (matched) {
-                unlockKeystore(password);
                 markContainerOpen(containerPassword, userId);
-                reportSuccessfulPasswordAttempt();
-            } else {
-                reportFailedPasswordAttempt();
+                unlockKeystore(password);
             }
             return matched;
         } catch (RemoteException re) {
@@ -332,8 +338,10 @@ public abstract class ParentLockPatternUtils {
     private void unlockKeystore(String password) {
         long bToken = Binder.clearCallingIdentity();
         try {
+            IContainerManager cm = getContainerManager();
+            if (cm == null) return;
             Intent intent = new Intent(ContainerConstants.ACTION_UNLOCK_CONTAINER_KEYSTORE);
-            intent.setPackage(getContainerManager().getContainerMdmPackageName());
+            intent.setPackage(cm.getContainerMdmPackageName());
             intent.putExtra(ContainerConstants.EXTRA_KEYSTORE_PASSWORD, password);
             mContext.sendBroadcastAsUser(intent, new UserHandle(sContainerUserId));
         } catch (RemoteException e) {

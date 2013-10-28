@@ -23,6 +23,7 @@ import android.os.IUserManager;
 import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.util.Log;
+import android.util.Slog;
 
 /** {@hide} */
 public class ExtendContentService {
@@ -30,15 +31,16 @@ public class ExtendContentService {
     private static final String TAG = "ExtendContentService";
 
     // ARKHAM 356
-    private static IUserManager mUm;
+    private static IUserManager sUm;
 
     /**
      * ARKHAM 356, getUserManager.
      */
     private static IUserManager getUserManager() {
-        if(mUm == null)
-            mUm = IUserManager.Stub.asInterface(ServiceManager.getService("user"));
-        return mUm;
+        if (sUm == null)
+            sUm = IUserManager.Stub.asInterface(ServiceManager.getService("user"));
+        if (sUm == null) Slog.e(TAG, "Failed to retrieve a UserManagerService instance.");
+        return sUm;
     }
 
     /**
@@ -54,8 +56,10 @@ public class ExtendContentService {
         UserInfo userInfo = null;
         long bToken = Binder.clearCallingIdentity();
         try {
-            userInfo = getUserManager().getUserInfo(userHandle);
-        } catch(RemoteException e) {
+            IUserManager um = getUserManager();
+            if (um == null) return false;
+            userInfo = um.getUserInfo(userHandle);
+        } catch (RemoteException e) {
             Log.e(TAG, "Remote Exception calling user manager", e);
         } finally {
             Binder.restoreCallingIdentity(bToken);

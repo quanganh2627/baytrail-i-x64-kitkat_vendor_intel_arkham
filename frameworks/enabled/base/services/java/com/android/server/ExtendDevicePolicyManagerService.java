@@ -17,12 +17,15 @@
 package com.android.server;
 
 import android.app.Activity;
+import android.app.ActivityManagerNative;
 import android.app.admin.DeviceAdminReceiver;
 import android.app.admin.DevicePolicyManager;
 import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.UserInfo;
+import android.os.AsyncTask;
 import android.os.Binder;
 import android.os.Environment;
 import android.os.Handler;
@@ -33,6 +36,7 @@ import android.os.UserHandle;
 import android.os.UserManager;
 
 import android.provider.Settings;
+import android.util.Log;
 import android.util.Slog;
 
 import java.io.File;
@@ -80,8 +84,6 @@ public class ExtendDevicePolicyManagerService extends DevicePolicyManagerService
              * actual container user.
              */
             UserHandle user = UserHandle.OWNER;
-            if (mUserManager == null)
-                mUserManager = (UserManager) mContext.getSystemService(Context.USER_SERVICE);
             UserInfo info = mUserManager.getUserInfo(admin.getUserHandle().getIdentifier());
             if (info != null && info.isContainer()) {
                 user = admin.getUserHandle();
@@ -91,32 +93,8 @@ public class ExtendDevicePolicyManagerService extends DevicePolicyManagerService
         }
     }
 
-    /* ARKHAM-289 If DPM triggers a wipe operation for a
-     * container user make sure removeContainer is called
-     * instead of removeUser so that the container is
-     * properly wiped.
-     */
-    protected boolean removeContainerUser(int userHandle) {
-        if (mUserManager == null)
-            mUserManager = (UserManager) mContext.getSystemService(Context.USER_SERVICE);
-        UserInfo ui = mUserManager.getUserInfo(userHandle);
-        if (ui != null && ui.isContainer()) {
-            IBinder b = ServiceManager.getService(ContainerConstants.CONTAINER_MANAGER_SERVICE);
-            IContainerManager containerService = IContainerManager.Stub.asInterface(b);
-            try {
-                containerService.removeContainer(userHandle);
-                return true;
-            } catch (RemoteException e) {
-                Slog.e(TAG, "Failed talking with the Container Manager Service!", e);
-            }
-        }
-        return false;
-    }
-
     /* ARKHAM-789 Enable container device admin after opening the container. */
     public void reportSuccessfulPasswordAttempt(int userHandle) {
-        if (mUserManager == null)
-            mUserManager = (UserManager) mContext.getSystemService(Context.USER_SERVICE);
         UserInfo user = mUserManager.getUserInfo(userHandle);
         if (user != null && user.isContainer()) {
             /* Force the DPM to reload container policy info.
@@ -130,8 +108,6 @@ public class ExtendDevicePolicyManagerService extends DevicePolicyManagerService
     /* Check to see if the policy xml exists or if it's encrypted. Only attempt to
      * write to it when it's unencrypted and the container is open. */
     protected void saveSettingsLocked(int userHandle) {
-        if (mUserManager == null)
-            mUserManager = (UserManager) mContext.getSystemService(Context.USER_SERVICE);
         UserInfo user = null;
         long ident = Binder.clearCallingIdentity();
         try {
@@ -174,6 +150,60 @@ public class ExtendDevicePolicyManagerService extends DevicePolicyManagerService
     }
     /* End Arkham-789 */
 
+    /* ARKHAM-545 - Disable container after reaching the maximum number of password attempts. */
+    public int getMaximumFailedPasswordsForWipe(ComponentName who, int userHandle) {
+        enforceCrossUserPermission(userHandle);
+        synchronized (this) {
+            UserInfo user = null;
+            try {
+                user = mUserManager.getUserInfo(userHandle);
+            } catch (SecurityException e) {
+                // If it fails to get user info, just go with calling the default implementation
+            }
+            /* Retrieve the maximum number of permitted failed attempts from the container
+             * database.
+             */
+            if (user != null && user.isContainer()) {
+                try {
+                    IBinder b = ServiceManager.getService(
+                            ContainerConstants.CONTAINER_MANAGER_SERVICE);
+                    IContainerManager containerService = IContainerManager.Stub.asInterface(b);
+                    if (containerService == null) {
+                        Log.e(TAG, "Failed to retrieve a ContainerManagerService instance.");
+                        return 0;
+                    }
+                    int max = containerService.getPasswordMaxAttempts(userHandle);
+                    return max;
+                } catch (RemoteException e) {
+                    Slog.e(TAG, "Failed talking with the Container Manager Service!", e);
+                }
+            }
+            return super.getMaximumFailedPasswordsForWipe(who, userHandle);
+        }
+    }
+
+    protected void wipeDeviceOrUserLocked(int flags, final int userHandle) {
+        UserInfo ui = mUserManager.getUserInfo(userHandle);
+        final boolean isContainerUser = (ui != null && ui.isContainer());
+        if (!isContainerUser) {
+            super.wipeDeviceOrUserLocked(flags, userHandle);
+            return;
+        }
+        mUserData.get(userHandle).mFailedPasswordAttempts = 0;
+        try {
+            IBinder b = ServiceManager.getService(ContainerConstants.CONTAINER_MANAGER_SERVICE);
+            IContainerManager containerService = IContainerManager.Stub.asInterface(b);
+            if (containerService == null) {
+                Log.e(TAG, "Failed to retrieve a ContainerManagerService instance.");
+                return;
+            }
+            containerService.wipeOrDisableContainer(userHandle);
+        } catch (RemoteException e) {
+            Slog.e(TAG, "Failed talking with the Container Manager Service!", e);
+        }
+    }
+    /* End Arkham-545 */
+
     /* Arkham-646: DPM lockNow command should also lock container
      * If the calling user is a container user, then lock the
      * corresponding container.
@@ -195,7 +225,6 @@ public class ExtendDevicePolicyManagerService extends DevicePolicyManagerService
         } finally {
             Binder.restoreCallingIdentity(ident);
         }
-        super.lockNowUnchecked();
     }
 
 }

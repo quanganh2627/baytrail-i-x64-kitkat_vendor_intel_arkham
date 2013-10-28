@@ -18,13 +18,7 @@ package com.intel.arkham;
 
 import android.content.Intent;
 import android.content.pm.ResolveInfo;
-import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.drawable.Drawable;
-import android.graphics.Paint;
-import android.graphics.Paint.Style;
-
-import com.intel.arkham.ContainerInfo;
 
 import com.android.systemui.recent.TaskDescription;
 
@@ -41,11 +35,11 @@ public final class ExtendTaskDescription extends TaskDescription {
 
     public ExtendTaskDescription(int _taskId, int _persistentTaskId,
             ResolveInfo _resolveInfo, Intent _intent,
-            String _packageName, CharSequence _description) {
+            String _packageName, CharSequence _description, ContainerInfo _containerInfo) {
         super(_taskId, _persistentTaskId, _resolveInfo, _intent, _packageName, _description);
 
         // ARKHAM-326 - Restart stopped container activities as container user
-        mContainerInfo = (ContainerInfo)_intent.getExtra("containerInfo");
+        mContainerInfo = _containerInfo;
     }
 
     public ExtendTaskDescription() {
