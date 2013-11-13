@@ -31,6 +31,8 @@ import android.os.ServiceManager;
 import android.os.UserHandle;
 import android.util.Slog;
 
+import com.android.server.am.ActivityManagerService;
+
 /** {@hide} */
 public class ExtendNotificationManagerService extends NotificationManagerService {
     private static final String TAG = "ExtendNotificationManagerService";
@@ -175,5 +177,16 @@ public class ExtendNotificationManagerService extends NotificationManagerService
     @Override
     protected String buildNotificationTag(String tag, int userId) {
         return ("[" + userId + "]" + ((tag != null) ? tag : ""));
+    }
+
+    @Override
+    public void enqueueNotificationInternal(String pkg, String basePkg,
+            int callingUid, int callingPid, String tag, int id,
+            Notification notification, int[] idOut, int userId) {
+        synchronized (ActivityManagerService.self()) {
+            super.enqueueNotificationInternal(pkg, basePkg, callingUid,
+                    callingPid, tag,
+                    id, notification, idOut, userId);
+        }
     }
 }
