@@ -19,8 +19,8 @@ package com.intel.arkham;
 import android.content.Context;
 import android.content.pm.UserInfo;
 import android.widget.FrameLayout;
-import com.android.internal.policy.impl.keyguard.KeyguardViewMediator;
-import com.android.internal.policy.impl.keyguard.KeyguardHostView.OnDismissAction;
+import com.android.keyguard.KeyguardViewMediator;
+import com.android.keyguard.KeyguardHostView.OnDismissAction;
 import com.android.internal.widget.LockPatternUtils;
 import java.util.List;
 

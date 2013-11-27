@@ -16,11 +16,11 @@
 
 package com.intel.arkham;
 
-import org.apache.harmony.xnet.provider.jsse.TrustedCertificateStore;
+import com.android.org.conscrypt.TrustedCertificateStore;
 
 public class ParentKeyChain {
 
     public static TrustedCertificateStore getTrustedCertificateStore() {
-        return new TrustedCertificateStore();
+        return null;
     }
 }

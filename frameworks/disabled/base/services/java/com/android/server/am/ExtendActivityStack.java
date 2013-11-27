@@ -23,8 +23,8 @@ import com.android.server.am.ActivityManagerService;
 
 /** {@hide} */
 final class ExtendActivityStack extends ActivityStack {
-    ExtendActivityStack(ActivityManagerService service, Context context, boolean mainStack,
-            Looper looper) {
-        super(service, context, mainStack, looper);
+    ExtendActivityStack(ActivityManagerService service, Context context, Looper looper,
+            int stackId) {
+        super(service, context, looper, stackId);
     }
 }

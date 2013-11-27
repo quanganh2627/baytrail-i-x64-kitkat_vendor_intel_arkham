@@ -26,7 +26,7 @@ import android.os.UserHandle;
 import android.util.Log;
 
 import com.android.internal.widget.LockPatternUtils;
-import com.android.internal.policy.impl.keyguard.KeyguardViewMediator;
+import com.android.internal.policy.impl.keyguard.KeyguardServiceDelegate;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -60,7 +60,7 @@ public abstract class ParentPhoneWindowManager {
 
     protected abstract Handler getHandler();
 
-    protected abstract KeyguardViewMediator getKeyguardViewMediator();
+    protected abstract KeyguardServiceDelegate getKeyguardServiceDelegate();
 
     public void init(Context context) {
         // ARKHAM - 596.
@@ -91,7 +91,7 @@ public abstract class ParentPhoneWindowManager {
 
     public void userActivity() {
         /* ARKHAM-1278 Interacting with the keyguard shouldn't be considered "user activity". */
-        if (getKeyguardViewMediator().isShowing()) return;
+        if (getKeyguardServiceDelegate().isShowing()) return;
         /* ARKHAM-424: START - Set the timeout password period based on device activity
          * On user activity, reset all the active container close Runnable objects.
          */
@@ -149,12 +149,12 @@ public abstract class ParentPhoneWindowManager {
                 cm.lockContainerNow(cid);
                 removeContainerCloseAction(cid);
                 /* ARKHAM-1278 Don't override the primary user's keyguard. */
-                KeyguardViewMediator kvm = getKeyguardViewMediator();
-                if (kvm != null && cm.isTopRunningActivityInContainer(cid) &&
-                        !(kvm.isShowing() && !mLockPatternUtils.isContainerUserMode())) {
+                KeyguardServiceDelegate ksd = getKeyguardServiceDelegate();
+                if (ksd != null && cm.isTopRunningActivityInContainer(cid) &&
+                        !(ksd.isShowing() && !mLockPatternUtils.isContainerUserMode())) {
                 /* End ARKHAM-1278. */
                     mLockPatternUtils.setContainerUserMode(cid);
-                    kvm.doKeyguardTimeout(null);
+                    ksd.doKeyguardTimeout(null);
                 }
             } catch (RemoteException e) {
                 // Should not happen.
@@ -229,7 +229,7 @@ public abstract class ParentPhoneWindowManager {
                 getHandler().post(action.closeAction);
             } else {
                 mLockPatternUtils.setContainerUserMode(cid);
-                getKeyguardViewMediator().doKeyguardTimeout(null);
+                getKeyguardServiceDelegate().doKeyguardTimeout(null);
             }
         }
     }
