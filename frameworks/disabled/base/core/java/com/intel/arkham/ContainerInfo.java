@@ -21,6 +21,10 @@ import android.os.Parcelable;
 
 public class ContainerInfo implements Parcelable {
 
+    public ContainerInfo(Parcel source) {
+
+    }
+
     @Override
     public void writeToParcel(Parcel dest, int flags) {
     }
@@ -41,4 +45,18 @@ public class ContainerInfo implements Parcelable {
     public String getAdminPackageName() {
         return null;
     }
+
+    public static final Parcelable.Creator<ContainerInfo> CREATOR =
+            new Parcelable.Creator<ContainerInfo>() {
+
+                @Override
+                public ContainerInfo createFromParcel(Parcel source) {
+                    return new ContainerInfo(source);
+                }
+
+                @Override
+                public ContainerInfo[] newArray(int size) {
+                    return new ContainerInfo[size];
+                }
+            };
 }

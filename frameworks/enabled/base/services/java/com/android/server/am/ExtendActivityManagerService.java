@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package com.android.server.am;
 import static com.android.internal.util.ArrayUtils.appendInt;
 
@@ -122,7 +121,7 @@ public final class ExtendActivityManagerService extends ActivityManagerService {
      * ARKHAM-191 - Function used to determine if the top running activity is a container activity
      */
     public boolean isTopRunningActivityInContainter(int cid) {
-        return mMainStack.isTopRunningActivityinContainter(cid);
+        return mStackSupervisor.getFocusedStack().isTopRunningActivityinContainter(cid);
     }
 
     protected int[] appendContainerGroupId(int uid, int[] gids) {

@@ -160,10 +160,10 @@ public class ExtendInputMethodManagerService extends InputMethodManagerService {
     }
 
     @Override
-    public List<InputMethodSubtype> getEnabledInputMethodSubtypeList(InputMethodInfo imi,
+    public List<InputMethodSubtype> getEnabledInputMethodSubtypeList(String imiId,
             boolean allowsImplicitlySelectedSubtypes) {
         synchronized (ActivityManagerService.self()) {
-            return super.getEnabledInputMethodSubtypeList(imi, allowsImplicitlySelectedSubtypes);
+            return super.getEnabledInputMethodSubtypeList(imiId, allowsImplicitlySelectedSubtypes);
         }
     }
 

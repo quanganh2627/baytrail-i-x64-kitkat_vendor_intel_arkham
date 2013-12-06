@@ -23,6 +23,7 @@ import android.content.pm.PackageManager;
 import android.content.pm.PackageManager.NameNotFoundException;
 import android.content.res.Resources;
 import android.graphics.Bitmap;
+import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.Binder;
 import android.os.IBinder;
@@ -94,7 +95,7 @@ public class ExtendRecentTasksLoader extends RecentTasksLoader {
                 + td + ": " + thumbnail);
         synchronized (td) {
             if (thumbnail != null) {
-                td.setThumbnail(thumbnail);
+                td.setThumbnail(new BitmapDrawable(mContext.getResources(), thumbnail));
             } else {
                 td.setThumbnail(mDefaultThumbnailBackground);
             }

@@ -28,6 +28,7 @@ import android.os.ServiceManager;
 import android.os.UserHandle;
 import android.security.KeyStore;
 import android.util.Log;
+import android.util.Slog;
 import android.widget.Toast;
 
 import com.android.internal.R;
@@ -42,9 +43,9 @@ public abstract class ParentLockPatternUtils {
 
     private static final String TAG = "LockPatternUtils";
     // ARKHAM - 596, isContainerUserMode - setting false will show primary user's keyguard.
-    protected static volatile boolean isContainerUserMode = false;
+//    protected static volatile boolean isContainerUserMode = false;
     // ARKHAM - 596, sContainerUserId - is set by PhoneWindowManager.
-    protected static volatile int sContainerUserId = UserHandle.USER_NULL;
+//   protected static volatile int sContainerUserId = UserHandle.USER_NULL;
 
     protected abstract int getCurrentOrCallingUserId();
 
@@ -166,7 +167,11 @@ public abstract class ParentLockPatternUtils {
 
     protected long getLong(String secureSettingKey, long defaultValue, int userHandle)
             throws RemoteException {
+        Log.e(TAG, "getLong:secureSettingKey " + secureSettingKey
+                + "userHandle:" + Integer.toString(userHandle));
         if (LockPatternUtils.PASSWORD_TYPE_KEY.equals(secureSettingKey)) {
+            Log.e(TAG, "Container getLong:secureSettingKey "
+                    + Long.toString(getContainerPasswordType(defaultValue, userHandle)));
             return getContainerPasswordType(defaultValue, userHandle);
         } else {
             return getLockSettings().getLong(secureSettingKey, defaultValue, userHandle);
@@ -241,6 +246,7 @@ public abstract class ParentLockPatternUtils {
      * ARKHAM-215: wrapper for UserManagerService call
      */
     protected boolean isContainerUser(int userId) {
+        Log.w(TAG, "userId is " + Integer.toString(userId));
         IUserManager userManager = IUserManager.Stub.asInterface(ServiceManager.getService("user"));
         if (userManager == null) {
             Log.e(TAG, "Failed to retrieve a UserManager instance.");
@@ -262,16 +268,67 @@ public abstract class ParentLockPatternUtils {
 
     // ARKHAM - 596. No permissions required, internal api.
     public void setContainerUserMode(int userId) {
-        isContainerUserMode = true;
-        sContainerUserId = userId;
+	Slog.w(TAG, this.getClass().getName() + "userId is " + Integer.toString(userId)
+                + ".  this is " + Integer.toHexString(System.identityHashCode(this)),
+                (new RuntimeException("setContainerUserMode").fillInStackTrace()));
+
+        try {
+            IContainerManager containerService = getContainerManager();
+            if (containerService != null) {
+                containerService.setContainerUserMode();
+                containerService.setsContainerUserId(userId);
+            }
+        } catch (RemoteException e) {
+            Log.w(TAG, "Failed talking with Container Manager Service!");
+        }
+
+    }
+
+    protected int getsContainerUserId() {
+        int sContainerUserId = UserHandle.USER_NULL;
+	try {
+            IContainerManager containerService = getContainerManager();
+            if (containerService != null) {
+		sContainerUserId = containerService.getsContainerUserId();
+            }
+        } catch (RemoteException e) {
+            Log.w(TAG, "Failed talking with Container Manager Service!");
+        }
+	return sContainerUserId;
     }
 
     public boolean isContainerUserMode() {
+        boolean isContainerUserMode = false;
+
+        try {
+            IContainerManager containerService = getContainerManager();
+            if (containerService != null) {
+                isContainerUserMode = containerService.isContainerUserMode();
+            }
+        } catch (RemoteException e) {
+            Log.w(TAG, "Failed talking with Container Manager Service!");
+        }
+
+	Slog.w(TAG, this.getClass().getName() + "ContainerUserMode is "
+                + Boolean.toString(isContainerUserMode) + ". this is "
+                + Integer.toHexString(System.identityHashCode(this)),
+                (new RuntimeException("isContainerUserMode").fillInStackTrace()));
+
         return isContainerUserMode;
     }
 
     public void resetContainerUserMode() {
-        isContainerUserMode = false;
+	Slog.w(TAG, this.getClass().getName() + "Reset ContainerUserMode" + ". this is "
+                + Integer.toHexString(System.identityHashCode(this)),
+                (new RuntimeException("isContainerUserMode").fillInStackTrace()));
+        try {
+            IContainerManager containerService = getContainerManager();
+            if (containerService != null) {
+                containerService.resetContainerUserMode();
+            }
+        } catch (RemoteException e) {
+            Log.w(TAG, "Failed talking with Container Manager Service!");
+        }
     }
     // ARKHAM - 596 Ends.
 
@@ -291,7 +348,8 @@ public abstract class ParentLockPatternUtils {
                     return false;
                 }
             }
-            matched = getLockSettings().checkPattern(absPatternToHash(pattern), userId);
+            matched = getLockSettings().checkPattern(
+                    LockPatternUtils.patternToString(pattern), userId);
             if (matched) {
                 markContainerOpen(containerPassword, userId);
                 unlockKeystore(LockPatternUtils.patternToString(pattern));
@@ -321,7 +379,7 @@ public abstract class ParentLockPatternUtils {
                     return false;
             }
 
-            matched = getLockSettings().checkPassword(passwordToHash(password), userId);
+            matched = getLockSettings().checkPassword(password, userId);
             if (matched) {
                 markContainerOpen(containerPassword, userId);
                 unlockKeystore(password);
@@ -343,7 +401,7 @@ public abstract class ParentLockPatternUtils {
             Intent intent = new Intent(ContainerConstants.ACTION_UNLOCK_CONTAINER_KEYSTORE);
             intent.setPackage(cm.getContainerMdmPackageName());
             intent.putExtra(ContainerConstants.EXTRA_KEYSTORE_PASSWORD, password);
-            mContext.sendBroadcastAsUser(intent, new UserHandle(sContainerUserId));
+            mContext.sendBroadcastAsUser(intent, new UserHandle(getsContainerUserId()));
         } catch (RemoteException e) {
             e.printStackTrace();
         } finally {

@@ -102,7 +102,8 @@ public class ExtendPackageManagerService extends PackageManagerService {
                     // we must add FileObserver.CREATE as an observer event, so that they are
                     // recognized immediately.
                     mContainerAppInstallObserver = new PackageManagerService.AppDirObserver(
-                        mContainerAppDir.getPath(), OBSERVER_EVENTS | FileObserver.CREATE, false);
+                            mContainerAppDir.getPath(), OBSERVER_EVENTS
+                            | FileObserver.CLOSE_WRITE, false, true);
                     mContainerAppInstallObserver.startWatching();
                     scanDirLI(mContainerAppDir, 0, scanMode, 0);
 

@@ -21,9 +21,9 @@ import android.os.ServiceManager;
 import android.os.UserHandle;
 import android.util.Log;
 
-import java.io.File;
+import com.android.org.conscrypt.TrustedCertificateStore;
 
-import org.apache.harmony.xnet.provider.jsse.TrustedCertificateStore;
+import java.io.File;
 
 public class ParentKeyChain {
     private static final String TAG = "KeyChain";

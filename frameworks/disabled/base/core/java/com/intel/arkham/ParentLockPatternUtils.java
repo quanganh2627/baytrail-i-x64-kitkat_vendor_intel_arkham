@@ -60,4 +60,8 @@ public abstract class ParentLockPatternUtils {
     public boolean isContainerUserMode() {
         return false;
     }
+
+    protected int getsContainerUserId() {
+        return -1;
+    }
 }

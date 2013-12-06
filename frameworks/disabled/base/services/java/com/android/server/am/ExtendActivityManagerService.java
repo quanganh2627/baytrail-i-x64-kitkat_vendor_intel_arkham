@@ -22,4 +22,8 @@ public final class ExtendActivityManagerService extends ActivityManagerService {
      protected ExtendActivityManagerService() {
         super();
     }
+
+    public void notifyUserForegroundObservers(int userId) {
+    }
+
 }

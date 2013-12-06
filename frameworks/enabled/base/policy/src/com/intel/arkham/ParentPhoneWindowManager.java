@@ -153,6 +153,7 @@ public abstract class ParentPhoneWindowManager {
                 if (ksd != null && cm.isTopRunningActivityInContainer(cid) &&
                         !(ksd.isShowing() && !mLockPatternUtils.isContainerUserMode())) {
                 /* End ARKHAM-1278. */
+                    Log.e(TAG, "setContainerUserMode #156" + "cid: " + Integer.toString(cid));
                     mLockPatternUtils.setContainerUserMode(cid);
                     ksd.doKeyguardTimeout(null);
                 }
@@ -228,6 +229,7 @@ public abstract class ParentPhoneWindowManager {
                 mContainerCloseActions.put(cid, action);
                 getHandler().post(action.closeAction);
             } else {
+                Log.e(TAG, "setContainerUserMode #231" + "cid: " + Integer.toString(cid));
                 mLockPatternUtils.setContainerUserMode(cid);
                 getKeyguardServiceDelegate().doKeyguardTimeout(null);
             }

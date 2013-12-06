@@ -26,4 +26,5 @@ public interface ContainerConstants {
      */
     public static final String SYNC_ACCOUNT_TYPE = "com.intel.arkham.accounts";
     public static final String EXTRA_CONTAINER_INFO = "containerInfo";
+    public static final String CONTAINER_MANAGER_SERVICE = "container_manager";
 }
