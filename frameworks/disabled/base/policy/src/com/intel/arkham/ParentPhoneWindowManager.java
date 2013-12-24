@@ -17,6 +17,7 @@
 package com.intel.arkham;
 
 import android.content.Context;
+import android.view.WindowManager;
 
 public abstract class ParentPhoneWindowManager {
 
@@ -30,5 +31,8 @@ public abstract class ParentPhoneWindowManager {
     }
 
     public void init(Context context) {
+    }
+
+    protected void updateWindowLayoutParams(WindowManager.LayoutParams lp) {
     }
 }
