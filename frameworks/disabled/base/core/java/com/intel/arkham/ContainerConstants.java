@@ -17,14 +17,18 @@
 package com.intel.arkham;
 
 /**
- * Utility class containing constants used by containers
+ * Utility class containing constants used by container administrator applications.
  */
 public interface ContainerConstants {
+    /** @hide */
     public static final String ACCOUNT_TYPE_CONTAINER = "account_type_container";
     /**
-     * Account type used for syncing container contacts outside the container if policy allows it
+     * Account type used for syncing container contacts outside the container,
+     * if the administrator's policy allows it.
+     * @hide
      */
     public static final String SYNC_ACCOUNT_TYPE = "com.intel.arkham.accounts";
+    /** @hide */
     public static final String EXTRA_CONTAINER_INFO = "containerInfo";
     public static final String CONTAINER_MANAGER_SERVICE = "container_manager";
 }
