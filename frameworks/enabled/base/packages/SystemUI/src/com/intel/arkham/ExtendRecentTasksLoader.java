@@ -50,7 +50,8 @@ public class ExtendRecentTasksLoader extends RecentTasksLoader {
             IContainerManager containerService = IContainerManager.Stub.asInterface(b);
             // Only add calling user's recent tasks
             // Also add existing containers' recent tasks, if userId is the container owner
-            container = containerService.getContainerFromCid(userId);
+            if (containerService != null)
+                container = containerService.getContainerFromCid(userId);
         } catch (RemoteException e) {
             Slog.e(TAG, "getContainer: failed talking with ContainerManagerService: ", e);
         } finally {

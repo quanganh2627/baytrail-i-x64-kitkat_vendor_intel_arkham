@@ -89,7 +89,7 @@ public class ExtendSettingsProvider extends SettingsProvider {
     void onUserStopping(int userHandle) {
         // close settings.db only for container users
         UserInfo userInfo = mUserManager.getUserInfo(userHandle);
-        if (!userInfo.isContainer())
+        if (userInfo == null || !userInfo.isContainer())
             return;
 
         synchronized (this) {
