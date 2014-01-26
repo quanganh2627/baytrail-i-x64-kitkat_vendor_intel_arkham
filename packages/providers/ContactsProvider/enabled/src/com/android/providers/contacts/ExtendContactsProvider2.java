@@ -92,6 +92,9 @@ public class ExtendContactsProvider2 extends ContactsProvider2 {
                     Object[] objAccount = intent.getParcelableArrayExtra(
                             ContainerConstants.EXTRA_INTENT_ACCOUNTS);
                     final ContactsDatabaseHelper dbHelper = mDbHelper.get();
+                    if (dbHelper == null) {
+                        return;
+                    }
                     final SQLiteDatabase db = dbHelper.getWritableDatabase();
                     db.beginTransaction();
                     final Set<AccountWithDataSet> knownAccountsWithDataSets =
@@ -99,6 +102,9 @@ public class ExtendContactsProvider2 extends ContactsProvider2 {
                     for (AccountWithDataSet knownAccountWithDataSet : knownAccountsWithDataSets) {
                         for (int i = 0; i < objAccount.length; i++) {
                             Account account = (Account)objAccount[i];
+                            if (account == null) {
+                                return;
+                            }
                             if (account.name.equals(knownAccountWithDataSet.getAccountName())) {
                                 final Long accountIdOrNull = dbHelper.getAccountIdOrNull(
                                         knownAccountWithDataSet);
