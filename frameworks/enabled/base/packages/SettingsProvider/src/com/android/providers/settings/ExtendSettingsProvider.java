@@ -26,12 +26,14 @@ import android.content.pm.UserInfo;
 import android.os.FileObserver;
 import android.os.UserHandle;
 import android.os.UserManager;
+import android.util.Slog;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
 
 public class ExtendSettingsProvider extends SettingsProvider {
 
+    private static final String TAG = "ExtendSettingsProvider";
     public class ExtendSettingsFileObserver extends SettingsFileObserver {
 
         public ExtendSettingsFileObserver(int userHandle, String path) {
@@ -100,8 +102,11 @@ public class ExtendSettingsProvider extends SettingsProvider {
             }
 
             DatabaseHelper dbhelper =  mOpenHelpers.get(userHandle);
-            dbhelper.close();
-
+            Slog.w(TAG, "Inside Setting Providers: delete db helper and caches for user "
+                    + userHandle);
+            if (dbhelper != null) {
+                dbhelper.close();
+            }
             mOpenHelpers.delete(userHandle);
             sSystemCaches.delete(userHandle);
             sSecureCaches.delete(userHandle);
