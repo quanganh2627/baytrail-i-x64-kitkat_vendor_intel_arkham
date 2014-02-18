@@ -91,11 +91,15 @@ public class ExtendContactsProvider2 extends ContactsProvider2 {
                 public void onReceive(Context context, Intent intent) {
                     Object[] objAccount = intent.getParcelableArrayExtra(
                             ContainerConstants.EXTRA_INTENT_ACCOUNTS);
+                    if (objAccount == null)
+                        return;
                     final ContactsDatabaseHelper dbHelper = mDbHelper.get();
                     if (dbHelper == null) {
                         return;
                     }
                     final SQLiteDatabase db = dbHelper.getWritableDatabase();
+                    if (db == null)
+                        return;
                     db.beginTransaction();
                     final Set<AccountWithDataSet> knownAccountsWithDataSets =
                             dbHelper.getAllAccountsWithDataSets();
