@@ -45,7 +45,7 @@ public class ExtendContactsDatabaseHelper extends ContactsDatabaseHelper {
         // unique _id for each table for primary user and containers
         int userId = UserHandle.myUserId();
         UserManager userManager = (UserManager) mContext.getSystemService(Context.USER_SERVICE);
-        if (userManager == null || !userManager
+        if (userManager == null || userManager.getUserInfo(userId) == null || !userManager
                 .getUserInfo(userId).isContainer()) {
             return;
         }
